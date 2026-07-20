@@ -553,7 +553,8 @@ function handleExcelFile(file) {
             });
             state.members = result.members;
             state.families = result.families;
-            state.monthsList = result.months;
+            state.monthsList = result.months.map(m => ({ key: m.key, id: m.id }));
+            state.selectedLedgerMonths = result.months.filter(m => m.selected).map(m => m.key);
 
             uploadStatus.innerHTML = `<strong>✅ تم تحميل الملف "${file.name}" ورفعه لجوجل شيت بنجاح!</strong>`;
             uploadStatus.style.color = "var(--success)";
