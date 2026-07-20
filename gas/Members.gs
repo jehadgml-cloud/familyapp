@@ -38,7 +38,10 @@ function updateMember(payload) {
   if (!existing) throw new Error('العضو غير موجود.');
 
   const oldParent = existing.parent;
-  const updated = Object.assign({}, existing, { name: payload.name, parent: payload.parent });
+  const updated = Object.assign({}, existing, {
+    name: payload.name !== undefined ? payload.name : existing.name,
+    parent: payload.parent !== undefined ? payload.parent : existing.parent
+  });
   delete updated._row;
   writeRowFromObject_(sheet, data.headers, existing._row, updated);
 
