@@ -22,7 +22,12 @@ async function callApi(action, payload) {
     if (!res.ok) {
         throw new Error("خطأ من الخادم (HTTP " + res.status + "). حاول مجدداً لاحقاً.");
     }
-    const body = await res.json();
+    let body;
+    try {
+        body = await res.json();
+    } catch (parseErr) {
+        throw new Error("خطأ في قراءة استجابة الخادم. حاول مجدداً لاحقاً.");
+    }
     if (body.error) {
         throw new Error(body.error);
     }
