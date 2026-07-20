@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تطبيق صندوق تحصيل عشيرة آل اطفيحة</title>
+    <!-- SheetJS (XLSX) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="styles.css?v=5">
+</head>
+<body>
+
+    <!-- 1. Login Portal Overlay -->
+    <div id="login-portal" class="login-overlay">
+
+        <!-- === PANEL A: LOGIN === -->
+        <div id="panel-login" class="login-card">
+            <div class="login-header">
+                <img src="logo.jpg" onerror="this.src='../../../.gemini/antigravity/brain/80d1c0e4-b2e3-4144-a423-87e5dba59a4a/media__1784398337878.jpg'" alt="شعار عائلة آل اطفيحة" class="login-logo">
+                <h2>صندوق تحصيل عائلة آل اطفيحة</h2>
+                <p>بوابة اللجنة المالية — تسجيل الدخول</p>
+            </div>
+            <div class="form-group">
+                <label for="login-email">البريد الإلكتروني</label>
+                <input type="email" id="login-email" class="form-control" placeholder="example@email.com">
+            </div>
+            <div class="form-group">
+                <label for="login-pass">كلمة المرور</label>
+                <input type="password" id="login-pass" class="form-control" placeholder="••••••••">
+            </div>
+            <div id="login-error" style="color: var(--danger); text-align: center; font-size: 0.85rem; font-weight: bold; display: none;">
+                بيانات غير صحيحة!
+            </div>
+            <button id="btn-submit-login" class="btn btn-primary" style="justify-content: center; width: 100%; padding: 14px;">
+                تسجيل الدخول للنظام
+            </button>
+            <div style="text-align: center; margin-top: 14px; display: flex; flex-direction: column; gap: 8px;">
+                <a href="#" id="link-show-register" style="color: var(--primary); font-size: 0.85rem; font-weight: 600; text-decoration: none;">➕ طلب صلاحية الدخول (تسجيل مستخدم جديد)</a>
+                <a href="#" id="link-reset-pass" style="color: var(--text-muted); font-size: 0.78rem; text-decoration: underline;">نسيت كلمة المرور؟ اضغط هنا</a>
+            </div>
+        </div>
+
+        <!-- === PANEL B: REGISTRATION REQUEST === -->
+        <div id="panel-register" class="login-card" style="display:none; max-width:480px;">
+            <div class="login-header">
+                <img src="logo.jpg" onerror="this.src='../../../.gemini/antigravity/brain/80d1c0e4-b2e3-4144-a423-87e5dba59a4a/media__1784398337878.jpg'" alt="شعار عائلة آل اطفيحة" class="login-logo">
+                <h2>طلب صلاحية الدخول</h2>
+                <p>يجب موافقة المسؤول جهاد زكري قبل تفعيل حسابك</p>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+                <div style="display: flex; gap: 12px; margin: 0;">
+                    <div class="form-group" style="flex: 1; margin: 0;">
+                        <label>الاسم الأوّل</label>
+                        <input type="text" id="reg-firstname" class="form-control" placeholder="مثال: محمد">
+                    </div>
+                    <div class="form-group" style="flex: 1; margin: 0;">
+                        <label>العائلة / الاسم الثاني</label>
+                        <input type="text" id="reg-lastname" class="form-control" placeholder="مثال: اطفيحة">
+                    </div>
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>البريد الإلكتروني</label>
+                    <input type="email" id="reg-email" class="form-control" placeholder="example@email.com">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>كلمة المرور</label>
+                    <input type="password" id="reg-pass" class="form-control" placeholder="6 أحرف على الأقل">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>تأكيد كلمة المرور</label>
+                    <input type="password" id="reg-pass2" class="form-control" placeholder="أعد كتابة كلمة المرور">
+                </div>
+                <div id="reg-error" style="color:var(--danger); font-size:0.82rem; font-weight:700; display:none; text-align:center;"></div>
+                <button id="btn-submit-register" class="btn btn-primary" style="justify-content:center; width:100%; padding:13px;">
+                    إرسال طلب التسجيل
+                </button>
+                <a href="#" id="link-back-login" style="color:var(--text-muted); font-size:0.82rem; text-align:center; text-decoration:underline;">← عودة لتسجيل الدخول</a>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 2. Application Layout -->
+    <div id="app-container" style="display: none; width: 100%;">
+        
+        <!-- Sidebar Navigation -->
+        <aside class="tabs-hide-print">
+            <div class="brand">
+                <img src="logo.jpg" onerror="this.src='../../../.gemini/antigravity/brain/80d1c0e4-b2e3-4144-a423-87e5dba59a4a/media__1784398337878.jpg'" alt="شعار عائلة آل اطفيحة" class="brand-logo">
+                <h2>صندوق آل اطفيحة</h2>
+            </div>
+
+            <!-- Pre-configured Logged Admin Details -->
+            <div class="profile-card">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div class="avatar" id="admin-avatar">م</div>
+                    <div class="info">
+                        <span class="name" id="admin-name">المدير المالي</span>
+                        <span class="role" id="admin-role">اللجنة المالية</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Status Indicator -->
+            <div id="sidebar-data-status" style="
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 12px;
+                border-radius: 8px;
+                margin-bottom: 16px;
+                font-size: 0.78rem;
+                background-color: rgba(239, 68, 68, 0.15);
+                border: 1px solid rgba(239, 68, 68, 0.3);
+                color: #fca5a5;
+            ">
+                <span id="sidebar-data-dot" style="width:8px;height:8px;border-radius:50%;background:#ef4444;flex-shrink:0;"></span>
+                <span id="sidebar-data-label">لا توجد بيانات محملة</span>
+            </div>
+
+            <nav>
+                <button class="nav-link active" data-tab="dashboard-tab">
+                    <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+                    لوحة التحكم
+                </button>
+                <button class="nav-link" data-tab="ledger-tab">
+                    <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+                    كشف التحصيل الشهري
+                </button>
+                <button class="nav-link" data-tab="families-tab">
+                    <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+                    دليل العائلات والوصولات
+                </button>
+                <button class="nav-link" data-tab="receipt-tab">
+                    <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+                    مُولد وصولات القبض
+                </button>
+                <button class="nav-link" data-tab="reports-tab">
+                    <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/></svg>
+                    التقارير الشهرية
+                </button>
+                <button class="nav-link" data-tab="expenses-tab">
+                    <svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
+                    صرف الأموال
+                </button>
+                <button class="nav-link" id="nav-usermgmt" data-tab="usermgmt-tab" style="display:none; position:relative;">
+                    <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+                    إدارة المشرفين
+                    <span id="pending-badge" style="display:none; position:absolute; top:6px; right:6px; background:#ef4444; color:white; border-radius:50%; width:18px; height:18px; font-size:0.7rem; font-weight:700; display:none; align-items:center; justify-content:center;">0</span>
+                </button>
+                <button class="nav-link" data-tab="upload-tab">
+                    <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+                    ملف البيانات Excel
+                </button>
+            </nav>
+
+            <button id="btn-logout" class="btn logout-btn">
+                <svg viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/></svg>
+                تسجيل الخروج
+            </button>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main>
+            
+            <!-- Topbar status -->
+            <section class="topbar tabs-hide-print">
+                <div class="title-group">
+                    <h1 id="tab-title-text">لوحة التحكم والتحليلات</h1>
+                    <p>صندوق الادخار والتحصيل والالتزام المالي - عائلة آل اطفيحة</p>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button id="btn-recalculate-all" class="btn btn-primary" style="padding: 8px 16px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 10px rgba(16, 185, 129, 0.15); height: 38px;">
+                        🔄 تحديث وإعادة حساب الميزانية
+                    </button>
+                    <div class="system-time">
+                        <span>التاريخ:</span>
+                        <span id="live-date">2026-07-16</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- A. TAB: Dashboard -->
+            <section id="dashboard-tab" class="tab-content active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span class="label">إجمالي أفراد العشيرة الموثقين</span>
+                        <span class="value" id="stat-total-members">-</span>
+                        <span class="desc">شخصاً مسجلاً في القوائم النشطة</span>
+                    </div>
+                    <div class="stat-card accent-blue">
+                        <span class="label">إجمالي المبلغ المحصّل (شيكل)</span>
+                        <span class="value" id="stat-total-collected">-</span>
+                        <span class="desc">تراكمي للمدفوعات منذ أبريل 2026</span>
+                    </div>
+                    <div class="stat-card accent-warning">
+                        <span class="label">التحصيل الشهري المتوقع (شيكل)</span>
+                        <span class="value" id="stat-expected-monthly">-</span>
+                        <span class="desc">بافتراض 10 شيكل شهرياً لكل فرد</span>
+                    </div>
+                    <div class="stat-card accent-danger">
+                        <span class="label">معدل الالتزام العام</span>
+                        <span class="value" id="stat-commitment-rate">0%</span>
+                        <span class="desc">نسبة العائلات الملتزمة بالدفع المالي</span>
+                    </div>
+                    <div class="stat-card" style="border-top: 3px solid #f59e0b;">
+                        <span class="label">إجمالي المصروفات المسحوبة (شيكل)</span>
+                        <span class="value" id="stat-total-expenses" style="color:#f59e0b;">0</span>
+                        <span class="desc">مجموع أوامر الصرف المعتمدة</span>
+                    </div>
+                    <div class="stat-card" style="border-top: 3px solid #10b981;">
+                        <span class="label">الرصيد الصافي المتاح (شيكل)</span>
+                        <span class="value" id="stat-net-balance" style="color:#10b981;">-</span>
+                        <span class="desc">المحصّل مطروحاً منه المصروفات</span>
+                    </div>
+                </div>
+
+                <div class="charts-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">إحصائيات المبالغ المحصلة شهرياً</span>
+                            <span class="card-subtitle">توزيع التحصيل والمبالغ المتبقية</span>
+                        </div>
+                        <div style="height: 320px; position: relative;">
+                            <canvas id="monthly-chart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">نسبة الالتزام الإجمالية</span>
+                        </div>
+                        <div style="height: 320px; position: relative; display: flex; align-items: center; justify-content: center;">
+                            <canvas id="rate-pie-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- B. TAB: Interactive Ledger -->
+            <section id="ledger-tab" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">جدول كشف التحصيل والتسجيل المالي</span>
+                        <button id="btn-export-excel" class="btn btn-primary no-print">
+                            <svg viewBox="0 0 24 24" style="width: 20px; height: 20px; fill: white;"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2z"/></svg>
+                            حفظ وتصدير البيانات لملف Excel
+                        </button>
+                    </div>
+
+                    <!-- Search and filters -->
+                    <div class="control-board no-print" style="margin-bottom: 12px;">
+                        <div class="search-wrapper">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 5 9.5 9.5 14 9.5 14z"/>
+                            </svg>
+                            <input type="text" id="ledger-search" class="search-input" placeholder="ابحث باسم فرد العشيرة أو رب العائلة...">
+                        </div>
+                        <div class="filters-wrapper">
+                            <!-- Hidden month filter select for background storage state compatibility -->
+                            <select id="ledger-filter-month" style="display: none;">
+                                <option value="all">كل الشهور</option>
+                            </select>
+                            
+                            <select id="ledger-filter-status" class="select-filter">
+                                <option value="all">كل الحالات (المسددين / المتخلفين)</option>
+                                <option value="paid">مسددين بالكامل</option>
+                                <option value="unpaid">عليهم مستحقات متأخرة</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Interactive Month Tabs Bar -->
+                    <div class="month-tabs-section no-print" style="margin: 0 20px 18px 20px; direction: rtl;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                            <span style="font-weight: 700; font-size: 0.92rem; color: var(--primary); display: flex; align-items: center; gap: 6px;">
+                                📅 شهور الجباية والمتابعة (انقر للتبديل السريع):
+                            </span>
+                            
+                            <!-- Month Edit/Delete Controls -->
+                            <div id="month-ops-controls" style="display: none; gap: 8px; align-items: center;">
+                                <button id="btn-edit-month" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 8px; border: 1px solid var(--primary); color: var(--primary); font-family: inherit; cursor: pointer; display: flex; align-items: center; gap: 4px;" title="تعديل اسم الشهر المحدد">
+                                    ✏️ تعديل الشهر
+                                </button>
+                                <button id="btn-delete-month" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 8px; border: 1px solid var(--danger); color: var(--danger); font-family: inherit; cursor: pointer; display: flex; align-items: center; gap: 4px;" title="حذف الشهر المحدد بالكامل">
+                                    🗑️ حذف الشهر
+                                </button>
+                            </div>
+                        </div>
+                        <div id="ledger-month-tabs" style="display: flex; gap: 10px; overflow-x: auto; padding: 6px 2px 12px 2px; -webkit-overflow-scrolling: touch; scrollbar-width: thin; max-width: 100%;">
+                            <!-- Month tabs will be dynamically rendered here -->
+                        </div>
+
+                        <!-- Dynamic checklist for multi-month selection (Comprehensive views) -->
+                        <div id="multi-month-select-panel" style="display: none; background: #f8fafc; border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-top: 10px; border-top: 3px solid var(--primary);">
+                            <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-main); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+                                <span>🔍 حدد الأشهر التي ترغب في عرض أعمدتها بالجدول معاً:</span>
+                                <div style="display: flex; gap: 8px;">
+                                    <button type="button" id="btn-select-all-months" class="btn-sig" style="margin: 0; padding: 3px 10px; font-size: 0.72rem; cursor: pointer;">تحديد الكل</button>
+                                    <button type="button" id="btn-select-none-months" class="btn-sig" style="margin: 0; padding: 3px 10px; font-size: 0.72rem; background: transparent; border-color: var(--danger); color: var(--danger); cursor: pointer;">إلغاء التحديد</button>
+                                </div>
+                            </div>
+                            <div id="multi-month-checkboxes" style="display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0;">
+                                <!-- Checkbox tags will be rendered here dynamically -->
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <!-- Quick Management Card -->
+                    <div class="management-board no-print" style="margin: 0 20px 20px 20px; padding: 15px; border: 1px solid var(--border); border-radius: 8px; background-color: var(--card-bg); display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <!-- Add Member Section -->
+                        <div style="border-left: 1px solid var(--border); padding-left: 20px; direction: rtl;">
+                            <h4 style="color: var(--primary); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; font-size: 0.95rem;">
+                                👤 إضافة فرد جديد لعشيرة آل اطفيحة
+                            </h4>
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                <div style="display: flex; gap: 8px;">
+                                    <input type="text" id="add-member-name" class="form-control" placeholder="الاسم الكامل للعضو الجديد..." style="flex-grow: 1;">
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <select id="add-member-select-family" class="form-control" style="width: 50%;">
+                                        <option value="">-- اختر رب عائلة قائم --</option>
+                                    </select>
+                                    <span style="font-size: 0.8rem; color: var(--text-muted); margin: 0 4px;">أو</span>
+                                    <input type="text" id="add-member-new-family" class="form-control" placeholder="رب عائلة جديد..." style="width: 45%;">
+                                </div>
+                                <button id="btn-add-member" class="btn btn-primary" style="align-self: flex-start; padding: 6px 16px; font-size: 0.85rem;">
+                                    إضافة العضو للكشف
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Add Month Section -->
+                        <div style="direction: rtl;">
+                            <h4 style="color: var(--primary); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; font-size: 0.95rem;">
+                                📅 إضافة شهر جباية جديد للصندوق
+                            </h4>
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                <div style="display: flex; gap: 8px;">
+                                    <input type="text" id="add-month-name" class="form-control" placeholder="اسم الشهر والسنة (مثال: يناير 2027)..." style="flex-grow: 1;">
+                                    <select id="add-month-id" class="form-control" style="width: 30%;">
+                                        <option value="1">يناير (1)</option>
+                                        <option value="2">فبراير (2)</option>
+                                        <option value="3">مارس (3)</option>
+                                        <option value="4">أبريل (4)</option>
+                                        <option value="5">مايو (5)</option>
+                                        <option value="6">يونيو (6)</option>
+                                        <option value="7">يوليو (7)</option>
+                                        <option value="8">أغسطس (8)</option>
+                                        <option value="9">سبتمبر (9)</option>
+                                        <option value="10">أكتوبر (10)</option>
+                                        <option value="11">نوفمبر (11)</option>
+                                        <option value="12">ديسمبر (12)</option>
+                                    </select>
+                                </div>
+                                <button id="btn-add-month" class="btn btn-primary" style="align-self: flex-start; padding: 6px 16px; font-size: 0.85rem;">
+                                    إضافة الشهر للكشف
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Table horizontal scroll controls -->
+                    <div class="table-scroll-info no-print" style="display: flex; justify-content: space-between; align-items: center; margin: 15px 0 10px 0; padding: 0 5px; flex-wrap: wrap; gap: 8px;">
+                        <span style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+                            ℹ️ اسحب الجدول لليمين/اليسار لتصفح باقي الشهور، أو استخدم أزرار التنقل السريع:
+                        </span>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-secondary btn-sm" onclick="scrollLedgerTable(200)" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px; display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                                ➡️ إزاحة لليسار
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="scrollLedgerTable(-200)" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px; display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                                إزاحة لليمين ⬅️
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Main Roster Ledger Table -->
+                    <div class="table-responsive">
+                        <table id="table-ledger">
+                            <thead id="ledger-headers">
+                                <tr>
+                                    <th>الرقم</th>
+                                    <th>الاسم كامل</th>
+                                    <th>رب العائلة</th>
+                                    <th>أبريل 26</th>
+                                    <th>مايو 26</th>
+                                    <th>يونيو 26</th>
+                                    <th>يوليو 26</th>
+                                    <th>أغسطس 26</th>
+                                    <th>سبتمبر 26</th>
+                                    <th>أكتوبر 26</th>
+                                    <th>نوفمبر 26</th>
+                                    <th>ديسمبر 26</th>
+                                    <th>المجموع</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ledger-rows">
+                                <!-- Loaded dynamically via app.js -->
+                                <tr>
+                                    <td colspan="12" style="text-align: center; color: var(--text-muted);">يرجى رفع ملف البيانات أولاً من علامة التبويب "ملف البيانات Excel" للبدء.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- C. TAB: Family Roster & WhatsApp receipts -->
+            <section id="families-tab" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">إدارة العائلات والوصولات السريعة</span>
+                    </div>
+
+                    <div class="control-board">
+                        <div class="search-wrapper">
+                            <input type="text" id="family-search" class="search-input" placeholder="ابحث باسم العائلة...">
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table id="table-families">
+                            <thead>
+                                <tr>
+                                    <th>معرف العائلة</th>
+                                    <th>اسم ورب العائلة</th>
+                                    <th>عدد أفراد الأسرة</th>
+                                    <th>الاشتراك المفترض (شيكل/شري)</th>
+                                    <th>إجمالي المسدد</th>
+                                    <th>دفعة سريعة وإصدار وصل</th>
+                                    <th>مشاركة واتساب</th>
+                                </tr>
+                            </thead>
+                            <tbody id="family-rows">
+                                <!-- Loaded dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- D. TAB: Receipt Generator -->
+            <section id="receipt-tab" class="tab-content">
+                <div class="receipt-workspace no-print">
+                    <!-- Form input panel -->
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">بيانات تعبئة الوصل المالي</span>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 16px;">
+                            <div class="form-group">
+                                <label for="receipt-select-family">اختر العائلة أو دافع المبلغ</label>
+                                <select id="receipt-select-family" class="form-control">
+                                    <option value="">-- اختر رب العائلة --</option>
+                                    <!-- Dynamic -->
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="receipt-no">رقم الوصل المتسلسل</label>
+                                <input type="number" id="receipt-no" class="form-control" value="1001">
+                            </div>
+                            <div class="form-group">
+                                <label for="receipt-amount">المبلغ المدفوع (شيكل)</label>
+                                <input type="number" id="receipt-amount" class="form-control" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="receipt-for-months">عن شهر / شهور</label>
+                                <!-- checkbox months selection -->
+                                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px;" id="receipt-months-container">
+                                    <label><input type="checkbox" class="receipt-month-chk" value="4"> أبريل 26</label>
+                                    <label><input type="checkbox" class="receipt-month-chk" value="5"> مايو 26</label>
+                                    <label><input type="checkbox" class="receipt-month-chk" value="6"> يونيو 26</label>
+                                    <label><input type="checkbox" class="receipt-month-chk" value="7"> يوليو 26</label>
+                                    <label><input type="checkbox" class="receipt-month-chk" value="8"> أغسطس 26</label>
+                                    <label><input type="checkbox" class="receipt-month-chk" value="9"> سبتمبر 26</label>
+                                    <label><input type="checkbox" class="receipt-month-chk" value="10"> أكتوبر 26</label>
+                                    <label><input type="checkbox" class="receipt-month-chk" value="11"> نوفمبر 26</label>
+                                    <label><input type="checkbox" class="receipt-month-chk" value="12"> ديسمبر 26</label>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="receipt-notes">ملاحظات إضافية</label>
+                                <textarea id="receipt-notes" class="form-control" rows="2" placeholder="أو كتابة أي تفاصيل مخصصة للدفعة وسنة الاشتراك..."></textarea>
+                            </div>
+                            
+                            <div style="display: flex; gap: 12px; margin-top: 10px;">
+                                <button id="btn-print-receipt" class="btn btn-primary" style="flex-grow: 1;">
+                                    طباعة الوصل الحالي (A5)
+                                </button>
+                                <button id="btn-copy-receipt-txt" class="btn btn-secondary">
+                                    نسخ نص الواتساب
+                                </button>
+                            </div>
+                            <button id="btn-save-receipt-payment" class="btn btn-primary" style="width: 100%; margin-top: 12px; background-color: #10b981; border-color: #10b981; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                <span>💾 حفظ وتسجيل الدفعة في النظام والداشبورد</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Visual Print Preview -->
+                    <div class="card" style="background-color: var(--background); padding: 12px;">
+                        <span class="card-subtitle" style="display: block; margin-bottom: 12px; font-weight: bold; text-align: center;">معاينة الوصل المالي للطباعة</span>
+                        <!-- Visual print layout -->
+                        <div id="printable-receipt-card" class="receipt-printable">
+                            <div class="receipt-header">
+                                <div style="display: flex; align-items: center; gap: 14px;">
+                                    <img src="logo.jpg" onerror="this.src='../../../.gemini/antigravity/brain/80d1c0e4-b2e3-4144-a423-87e5dba59a4a/media__1784398337878.jpg'" alt="شعار العشيرة" style="width: 55px; height: 55px; object-fit: contain; border-radius: 4px;">
+                                    <div>
+                                        <h3 class="title" style="margin: 0; font-size: 1.15rem;">صندوق تحصيل عائلة آل اطفيحة</h3>
+                                        <p style="font-size: 0.72rem; margin: 2px 0 0 0; color: #555;">اللجنة المالية المركزية للعشيرة</p>
+                                    </div>
+                                </div>
+                                <div class="meta">
+                                    <div>رقم السند: <strong id="p-receipt-no">1001</strong></div>
+                                    <div>التاريخ: <span id="p-receipt-date">2026-07-16</span></div>
+                                </div>
+                            </div>
+
+                            <p style="text-align: center; font-weight: bold; font-size: 1.1rem; margin: 10px 0; border: 1px solid #000; padding: 4px; border-radius: 4px;">
+                                سند قبض مالي نقدي
+                            </p>
+
+                            <div class="receipt-body">
+                                <div class="receipt-row">
+                                    <span class="label">وصلنا من السيد / العائلة:</span>
+                                    <span class="value" id="p-receipt-sender">-</span>
+                                </div>
+                                <div class="receipt-row" id="p-receipt-members-row" style="background: rgba(16, 185, 129, 0.04); border-radius: 4px; padding: 6px;">
+                                    <span class="label">أفراد الأسرة المشمولين:</span>
+                                    <span class="value" id="p-receipt-members" style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted); line-height: 1.4;">-</span>
+                                </div>
+                                <div class="receipt-row">
+                                    <span class="label">المبلغ المكتوب:</span>
+                                    <span class="value"><strong id="p-receipt-amount-val">0</strong> شيكل فقط لا غير</span>
+                                </div>
+                                <div class="receipt-row">
+                                    <span class="label">وذلك عن إشتراك شهور:</span>
+                                    <span class="value" id="p-receipt-months-names">-</span>
+                                </div>
+                                <div class="receipt-row">
+                                    <span class="label">المسؤول المستلم:</span>
+                                    <span class="value" id="p-receipt-admin">-</span>
+                                </div>
+                                <div class="receipt-row" style="border: none;">
+                                    <span class="label">ملاحظات:</span>
+                                    <span class="value" id="p-receipt-notes-val">-</span>
+                                </div>
+                            </div>
+
+                            <!-- 5 Signatures layout — Al-Atfihah Financial Committee -->
+                            <div class="receipt-signatures">
+                                <div class="signature-block">
+                                    <span class="role">رئيس اللجنة المالية</span>
+                                    <span class="name">جهاد زكري إسماعيل اطفيحة</span>
+                                    <div class="line"></div>
+                                </div>
+                                <div class="signature-block">
+                                    <span class="role">نائب رئيس اللجنة</span>
+                                    <span class="name">أشرف يوسف محمود اطفيحة</span>
+                                    <div class="line"></div>
+                                </div>
+                                <div class="signature-block">
+                                    <span class="role">أمين الصندوق</span>
+                                    <span class="name">إبراهيم محمد إبراهيم اطفيحة</span>
+                                    <div class="line"></div>
+                                </div>
+                                <div class="signature-block">
+                                    <span class="role">المراقب المالي</span>
+                                    <span class="name">معتز أمين محمد محمود اطفيحة</span>
+                                    <div class="line"></div>
+                                </div>
+                                <div class="signature-block">
+                                    <span class="role">منسق التحصيل</span>
+                                    <span class="name">حبيب محمود محمد اطفيحة</span>
+                                    <div class="line"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fallback print container, visible ONLY in print layout -->
+                <div id="print-recipient-only" class="receipt-printable" style="display: none;"></div>
+            </section>
+
+            <!-- E. TAB: Monthly Reports -->
+            <section id="reports-tab" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">التقارير والمراجعات المالية الشهرية والسنوية</span>
+                        <div style="display: flex; gap: 8px;">
+                            <button id="btn-print-report" class="btn btn-secondary no-print">
+                                طباعة التقرير الحالي
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Choose month for review -->
+                    <div class="control-board no-print">
+                        <div class="form-group" style="min-width: 250px;">
+                            <label for="report-select-month">حدد شهر التقرير المالي</label>
+                            <select id="report-select-month" class="form-control select-filter" style="width: 100%;">
+                                <option value="4">أبريل 2026</option>
+                                <option value="5">مايو 2026</option>
+                                <option value="6">يونيو 2026</option>
+                                <option value="7">يوليو 2026</option>
+                                <option value="8">أغسطس 2026</option>
+                                <option value="9">سبتمبر 2026</option>
+                                <option value="10">أكتوبر 2026</option>
+                                <option value="11">نوفمبر 2026</option>
+                                <option value="12">ديسمبر 2026</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Layout of the printable report sheet -->
+                    <div id="printable-monthly-report" style="padding: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--secondary); padding-bottom: 12px; margin-bottom: 20px;">
+                            <div style="display: flex; align-items: center; gap: 16px;">
+                                <img src="logo.jpg" onerror="this.src='../../../.gemini/antigravity/brain/80d1c0e4-b2e3-4144-a423-87e5dba59a4a/media__1784398337878.jpg'" alt="شعار العشيرة" style="width: 65px; height: 65px; object-fit: contain; border-radius: 4px;">
+                                <div>
+                                    <h2 style="color: var(--secondary); font-size: 1.35rem; margin: 0;" id="r-title">تقرير صندوق التحصيل الشهري - أبريل 2026</h2>
+                                    <p style="font-size: 0.8rem; margin: 4px 0 0 0; color: var(--text-muted);">عشيرة آل اطفيحة - اللجنة المالية المركزية</p>
+                                </div>
+                            </div>
+                            <div style="text-align: left;">
+                                <div style="font-size: 0.85rem;">تاريخ التقرير: <span id="r-date">2026-07-16</span></div>
+                                <div style="font-size: 0.85rem;">المسؤول المصدر: <span id="r-admin">المدير المالي</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Monthly Numbers Summary -->
+                        <div class="stats-grid" style="margin-bottom: 24px;">
+                            <div class="stat-card" style="padding: 16px;">
+                                <span class="label">إجمالي المطلوب دفعه</span>
+                                <span class="value" id="r-expected">-</span>
+                                <span class="desc">10 شيكل عن كل فرد نشط</span>
+                            </div>
+                            <div class="stat-card accent-blue" style="padding: 16px;">
+                                <span class="label">المبلـغ المحصـل بالفعل</span>
+                                <span class="value" id="r-collected">-</span>
+                                <span class="desc">المبالغ النقدية الموردة للصندوق</span>
+                            </div>
+                            <div class="stat-card accent-warning" style="padding: 16px;">
+                                <span class="label">إجمالي المبالغ المتأخرة</span>
+                                <span class="value" id="r-pending">-</span>
+                                <span class="desc">المبالغ غير المسددة لهذا الشهر</span>
+                            </div>
+                            <div class="stat-card accent-danger" style="padding: 16px;">
+                                <span class="label">نسبة الالتزام بالشهر</span>
+                                <span class="value" id="r-rate">0%</span>
+                                <span class="desc">نسبة التحصيل من الكلي</span>
+                            </div>
+                        </div>
+
+                        <div class="card-header" style="margin-top: 24px; border: none; padding-bottom: 0;">
+                            <span class="card-title" style="font-size: 1.1rem;">توزيع كشف أسماء المساهمات المالية</span>
+                        </div>
+
+                        <!-- Side-by-side split columns showing paid vs unpaid members for cleaner layout -->
+                        <div class="monthly-split">
+                            <div>
+                                <h3 style="background-color: var(--primary-light); color: var(--primary-hover); padding: 8px 12px; border-radius: 6px; font-size: 0.95rem; margin-bottom: 8px; border-right: 4px solid var(--primary);">
+                                    المسددين والمساهمين للشهر (<span id="r-paid-count">0</span>)
+                                </h3>
+                                <div class="list-container">
+                                    <table style="font-size: 0.85rem;">
+                                        <thead>
+                                            <tr>
+                                                <th>الرقم</th>
+                                                <th>الاسم</th>
+                                                <th>المشرف</th>
+                                                <th>المبلغ</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="r-rows-paid">
+                                            <!-- Dynamically filled -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 style="background-color: #fef2f2; color: var(--danger); padding: 8px 12px; border-radius: 6px; font-size: 0.95rem; margin-bottom: 8px; border-right: 4px solid var(--danger);">
+                                    غير المسددين والمتأخرين للشهر (<span id="r-unpaid-count">0</span>)
+                                </h3>
+                                <div class="list-container">
+                                    <table style="font-size: 0.85rem;">
+                                        <thead>
+                                            <tr>
+                                                <th>الرقم</th>
+                                                <th>الاسم</th>
+                                                <th>المشرف</th>
+                                                <th>المطلوب</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="r-rows-unpaid">
+                                            <!-- Dynamically filled -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Monthly Expenses Summary in Report -->
+                        <div id="r-expenses-section" style="margin-top:24px; display:none;">
+                            <h3 style="background: rgba(245,158,11,0.12); color:#f59e0b; padding: 8px 14px; border-radius:6px; font-size:0.95rem; border-right: 4px solid #f59e0b; margin-bottom:10px;">
+                                أوامر الصرف المعتمدة لهذا الشهر (<span id="r-exp-count">0</span>)
+                            </h3>
+                            <table style="font-size:0.85rem; width:100%; border-collapse:collapse;">
+                                <thead>
+                                    <tr style="background:rgba(245,158,11,0.08);">
+                                        <th style="padding:6px 10px; text-align:right;">#</th>
+                                        <th style="padding:6px 10px; text-align:right;">التاريخ</th>
+                                        <th style="padding:6px 10px; text-align:right;">السبب</th>
+                                        <th style="padding:6px 10px; text-align:right;">التصنيف</th>
+                                        <th style="padding:6px 10px; text-align:right;">المبلغ</th>
+                                        <th style="padding:6px 10px; text-align:right;">معتمد من</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="r-exp-rows"></tbody>
+                            </table>
+                            <div style="text-align:left; font-weight:700; color:#f59e0b; margin-top:8px; font-size:0.95rem;">
+                                إجمالي مصروفات الشهر: <span id="r-exp-total">0</span> شيكل
+                            </div>
+                        </div>
+
+                        <!-- Board of trustees signatures — Al-Atfihah Financial Committee -->
+                        <div class="receipt-signatures" style="margin-top: 40px; border-top: 2px solid var(--secondary);">
+                            <div class="signature-block">
+                                <span class="role">رئيس اللجنة المالية</span>
+                                <span class="name">جهاد زكري إسماعيل اطفيحة</span>
+                                <div id="sig-area-1" style="display:flex; flex-direction:column; align-items:center; width:100%; min-height:40px; justify-content:center;">
+                                    <div class="line"></div>
+                                    <button class="btn-sig no-print" onclick="openSignatureModal('1')">✍️ توقيع</button>
+                                </div>
+                            </div>
+                            <div class="signature-block">
+                                <span class="role">نائب رئيس اللجنة المالية</span>
+                                <span class="name">أشرف يوسف محمود اطفيحة</span>
+                                <div id="sig-area-2" style="display:flex; flex-direction:column; align-items:center; width:100%; min-height:40px; justify-content:center;">
+                                    <div class="line"></div>
+                                    <button class="btn-sig no-print" onclick="openSignatureModal('2')">✍️ توقيع</button>
+                                </div>
+                            </div>
+                            <div class="signature-block">
+                                <span class="role">أمين صندوق العشيرة</span>
+                                <span class="name">إبراهيم محمد إبراهيم اطفيحة</span>
+                                <div id="sig-area-3" style="display:flex; flex-direction:column; align-items:center; width:100%; min-height:40px; justify-content:center;">
+                                    <div class="line"></div>
+                                    <button class="btn-sig no-print" onclick="openSignatureModal('3')">✍️ توقيع</button>
+                                </div>
+                            </div>
+                            <div class="signature-block">
+                                <span class="role">المراقب المالي لللجنة</span>
+                                <span class="name">معتز أمين محمد محمود اطفيحة</span>
+                                <div id="sig-area-4" style="display:flex; flex-direction:column; align-items:center; width:100%; min-height:40px; justify-content:center;">
+                                    <div class="line"></div>
+                                    <button class="btn-sig no-print" onclick="openSignatureModal('4')">✍️ توقيع</button>
+                                </div>
+                            </div>
+                            <div class="signature-block">
+                                <span class="role">منسق التحصيل والوصولات</span>
+                                <span class="name">حبيب محمود محمد اطفيحة</span>
+                                <div id="sig-area-5" style="display:flex; flex-direction:column; align-items:center; width:100%; min-height:40px; justify-content:center;">
+                                    <div class="line"></div>
+                                    <button class="btn-sig no-print" onclick="openSignatureModal('5')">✍️ توقيع</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- E2. TAB: Expenses / Expenditure -->
+            <section id="expenses-tab" class="tab-content">
+                <!-- Entry Form Card -->
+                <div class="card" style="margin-bottom: 24px;">
+                    <div class="card-header">
+                        <span class="card-title">تسجيل أمر صرف جديد</span>
+                        <span class="card-subtitle">يتم خصم المبلغ تلقائياً من الرصيد الصافي للصندوق</span>
+                    </div>
+                    <div style="padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; direction: rtl;" id="expense-form-grid">
+                        <!-- Right column -->
+                        <div style="display: flex; flex-direction: column; gap: 14px;">
+                            <div class="form-group" style="margin:0;">
+                                <label for="exp-date">تاريخ الصرف</label>
+                                <input type="date" id="exp-date" class="form-control">
+                            </div>
+                            <div class="form-group" style="margin:0;">
+                                <label for="exp-amount">المبلغ المصروف (شيكل)</label>
+                                <input type="number" id="exp-amount" class="form-control" placeholder="0" min="1">
+                            </div>
+                            <div class="form-group" style="margin:0;">
+                                <label for="exp-category">تصنيف المصروف</label>
+                                <select id="exp-category" class="form-control">
+                                    <option value="إدارية">مصاريف إدارية</option>
+                                    <option value="طارئة">حالة طارئة / إغاثة</option>
+                                    <option value="اجتماعية">فعالية اجتماعية</option>
+                                    <option value="صيانة">صيانة وخدمات</option>
+                                    <option value="أخرى">أخرى</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin:0;">
+                                <label for="exp-file">المرفقات (صور / مستندات / فواتير)</label>
+                                <input type="file" id="exp-file" class="form-control" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="padding: 8px;">
+                                <span style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-top: 2px;">الحجم الأقصى للورقة/الملف الواحد: 1.5 ميجابايت.</span>
+                            </div>
+                        </div>
+                        <!-- Left column -->
+                        <div style="display: flex; flex-direction: column; gap: 14px;">
+                            <div class="form-group" style="margin:0;">
+                                <label for="exp-reason">سبب الصرف ووصف المهمة</label>
+                                <textarea id="exp-reason" class="form-control" rows="3" placeholder="مثال: شراء أدوات مكتبية للجنة المالية..."></textarea>
+                            </div>
+                            <div class="form-group" style="margin:0;">
+                                <label for="exp-authorized">اسم المسؤول المعتمِد للصرف</label>
+                                <input type="text" id="exp-authorized" class="form-control" placeholder="مثال: جهاد زكري إسماعيل اطفيحة" readonly>
+                            </div>
+                            <button id="btn-add-expense" class="btn btn-primary" style="margin-top: auto; justify-content: center; padding: 12px;">
+                                ✅ تسجيل أمر الصرف وخصمه من الصندوق
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Expenses History Table Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">سجل أوامر الصرف التاريخية</span>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <span id="exp-total-badge" style="background: rgba(245,158,11,0.15); color:#f59e0b; border:1px solid rgba(245,158,11,0.4); padding: 4px 14px; border-radius: 20px; font-size: 0.82rem; font-weight: 700;">الإجمالي: 0 شيكل</span>
+                            <button id="btn-export-expenses" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.82rem;">
+                                📊 تصدير للـ Excel
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="table-expenses">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>التاريخ</th>
+                                    <th>التصنيف</th>
+                                    <th>سبب الصرف</th>
+                                    <th>المبلغ (شيكل)</th>
+                                    <th>المرفق</th>
+                                    <th>معتمَد من</th>
+                                    <th>إجراء</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expense-rows">
+                                <tr><td colspan="8" style="text-align:center; color: var(--text-muted);">لا توجد أوامر صرف مسجّلة بعد.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- F. TAB: File Upload / Management -->
+            <section id="upload-tab" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">تحميل وتحديث قاعدة البيانات من ملف Excel</span>
+                    </div>
+                    
+                    <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.6; margin-bottom: 20px;">
+                        يحتفظ التطبيق ببيانات الملف <strong>بشكل دائم</strong> في المتصفح بعد رفعه لأول مرة —
+                        لن تحتاج لرفعه مجدداً عند تسجيل الدخول. يمكنك رفع ملف جديد في أي وقت لتحديث البيانات.
+                        الملف المطلوب: <code>^Gاحصاء ال اطفيحه.xlsx</code>
+                    </p>
+
+                    <!-- Drag and drop zone -->
+                    <div class="upload-zone" id="drop-zone">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+                        </svg>
+                        <h3>اسحب ملف Excel الخاص بصندوق التحصيل هنا</h3>
+                        <p>أو انقر هنا لتصفح الملفات من جهازك</p>
+                        <input type="file" id="btn-file-select" style="display: none;" accept=".xlsx, .xls">
+                    </div>
+
+                    <div id="upload-status" style="text-align: center; margin-top: 15px; font-weight: bold; font-size: 1rem;"></div>
+                    
+                    <!-- Advanced LocalStorage clear -->
+                    <div style="margin-top: 40px; border-top: 1px solid var(--border); padding-top: 20px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4 style="color: var(--danger); font-size: 0.95rem;">مسح التخزين المؤقت للمتصفح</h4>
+                            <p style="font-size: 0.75rem; color: var(--text-muted);">في حال رغبتك في حذف نسخة الميموري والتخزين الحالية والبدء من جديد بالملف الأصلي</p>
+                        </div>
+                        <button id="btn-clear-cache" class="btn btn-danger no-print">مسح الذاكرة المؤقتة</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- G. TAB: User Management (Master Admin Only) -->
+            <section id="usermgmt-tab" class="tab-content">
+
+                <!-- Pending Requests Card -->
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <span class="card-title">⏳ طلبات التسجيل المعلّقة</span>
+                        <span id="pending-count-label" style="background:rgba(239,68,68,0.12); color:#ef4444; border:1px solid rgba(239,68,68,0.3); padding:4px 14px; border-radius:20px; font-size:0.82rem; font-weight:700;">0 طلب</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="table-pending-users">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>الاسم الكامل</th>
+                                    <th>البريد الإلكتروني</th>
+                                    <th>الدور المطلوب</th>
+                                    <th>تاريخ الطلب</th>
+                                    <th>الإجراء</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pending-user-rows">
+                                <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">لا توجد طلبات تسجيل معلّقة.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Direct Add Supervisor Card -->
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <span class="card-title">➕ إضافة مشرف جديد مباشرةً</span>
+                        <span class="card-subtitle">يُفعَّل الحساب فوراً دون انتظار طلب</span>
+                    </div>
+                    <div style="padding:20px; display:grid; grid-template-columns:1fr 1fr; gap:16px; direction:rtl;" id="add-supervisor-grid">
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            <div class="form-group" style="margin:0;">
+                                <label for="su-name">الاسم الكامل</label>
+                                <input type="text" id="su-name" class="form-control" placeholder="مثال: سامي محمد اطفيحة">
+                            </div>
+                            <div class="form-group" style="margin:0;">
+                                <label for="su-email">البريد الإلكتروني</label>
+                                <input type="email" id="su-email" class="form-control" placeholder="example@email.com">
+                            </div>
+                        </div>
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            <div class="form-group" style="margin:0;">
+                                <label for="su-role">الدور / الصفة</label>
+                                <input type="text" id="su-role" class="form-control" placeholder="مثال: مشرف تحصيل">
+                            </div>
+                            <div class="form-group" style="margin:0;">
+                                <label for="su-pass">كلمة المرور المبدئية</label>
+                                <input type="text" id="su-pass" class="form-control" placeholder="ستُرسل للمستخدم">
+                            </div>
+                            <button id="btn-add-supervisor" class="btn btn-primary" style="justify-content:center; padding:12px;">
+                                ✅ إضافة المشرف فوراً
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Users List Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">👥 جميع المستخدمين النشطين</span>
+                        <span id="active-users-count" style="background:rgba(16,185,129,0.12); color:#10b981; border:1px solid rgba(16,185,129,0.3); padding:4px 14px; border-radius:20px; font-size:0.82rem; font-weight:700;">0 مستخدم</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="table-active-users">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>الاسم</th>
+                                    <th>البريد الإلكتروني</th>
+                                    <th>الدور</th>
+                                    <th>النوع</th>
+                                    <th>إجراء</th>
+                                </tr>
+                            </thead>
+                            <tbody id="active-user-rows">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </section>
+
+        </main>
+    </div>
+
+    <!-- 3. Attachment Viewer Modal Overlay -->
+    <div id="attachment-modal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15, 23, 42, 0.6); z-index:9999; justify-content:center; align-items:center; backdrop-filter:blur(8px);">
+        <div class="modal-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:16px; width:90%; max-width:650px; box-shadow:var(--shadow-lg); display:flex; flex-direction:column; overflow:hidden;">
+            <div class="modal-header" style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+                <h3 id="attachment-modal-title" style="margin:0; font-size:1.15rem; color:var(--text-main); font-weight:700;">عرض المستند المرفق</h3>
+                <button onclick="closeAttachmentModal()" style="background:transparent; border:none; color:var(--text-muted); font-size:1.6rem; cursor:pointer; line-height:1; font-weight:700;">&times;</button>
+            </div>
+            <div id="attachment-modal-body" style="padding:20px; display:flex; justify-content:center; align-items:center; min-height:220px; max-height:480px; overflow-y:auto; background:#f8fafc; border-bottom:1px solid var(--border);">
+                <!-- Content will be injected dynamically via JavaScript -->
+            </div>
+            <div class="modal-footer" style="padding:14px 20px; display:flex; justify-content:space-between; align-items:center; gap:10px; background:#f1f5f9;">
+                <button id="btn-download-attachment" class="btn btn-primary" style="padding:8px 16px; font-size:0.85rem; background:var(--accent);">📥 تحميل الملف للمطالعة</button>
+                <button onclick="closeAttachmentModal()" class="btn btn-secondary" style="padding:8px 20px; font-size:0.85rem;">إغلاق</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Electronic Signature Modal -->
+    <div id="signature-modal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15, 23, 42, 0.6); z-index:9999; justify-content:center; align-items:center; backdrop-filter:blur(8px);">
+        <div class="modal-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:16px; width:90%; max-width:440px; box-shadow:var(--shadow-lg); display:flex; flex-direction:column; overflow:hidden;">
+            <div class="modal-header" style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; direction: rtl;">
+                <h3 id="signature-modal-title" style="margin:0; font-size:1.1rem; color:var(--text-main); font-weight:700;">قلم التوقيع الإلكتروني</h3>
+                <button onclick="closeSignatureModal()" style="background:transparent; border:none; color:var(--text-muted); font-size:1.6rem; cursor:pointer; line-height:1; font-weight:700;">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:20px; display:flex; flex-direction:column; gap: 12px; background:#f8fafc; border-bottom:1px solid var(--border); direction: rtl; text-align: right;">
+                <p style="font-size:0.82rem; color:var(--text-muted); margin:0;">ارسم توقيعك هنا بالماوس أو بالإصبع:</p>
+                <div style="border: 2px dashed var(--primary); border-radius: 8px; background: white; overflow: hidden; height: 160px; position: relative;">
+                    <canvas id="signature-pad" width="400" height="160" style="width: 100%; height: 100%; cursor: crosshair; display: block;"></canvas>
+                </div>
+                <div style="display:flex; justify-content:space-between; gap:10px;">
+                    <button id="btn-draw-clear" class="btn btn-secondary" style="padding:4px 10px; font-size:0.75rem; background:#fee2e2; color:#ef4444; border-color:#fca5a5;">🗑️ مسح وإعادة رسم</button>
+                    <span style="font-size: 0.78rem; text-decoration: underline; color: var(--primary);">توقيع معتمد رسمياً</span>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding:12px 20px; display:flex; justify-content:flex-end; align-items:center; gap:10px; background:#f1f5f9; direction: rtl;">
+                <button id="btn-save-signature" class="btn btn-primary" style="padding:8px 16px; font-size:0.82rem; font-weight:700;">✍️ اعتماد وحفظ التوقيع</button>
+                <button onclick="closeSignatureModal()" class="btn btn-secondary" style="padding:8px 20px; font-size:0.82rem;">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. Custom Premium Confirm Dialog Modal -->
+    <div id="confirm-modal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15, 23, 42, 0.6); z-index:10000; justify-content:center; align-items:center; backdrop-filter:blur(8px);">
+        <div class="modal-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:16px; width:90%; max-width:400px; box-shadow:var(--shadow-lg); display:flex; flex-direction:column; overflow:hidden;">
+            <div class="modal-body" style="padding:24px 20px; display:flex; flex-direction:column; gap:16px; background:var(--card-bg); text-align:center; direction:rtl;">
+                <div style="font-size:3rem; color:#ef4444; line-height:1;">⚠️</div>
+                <h3 style="margin:0; font-size:1.15rem; color:var(--text-main); font-weight:700;">تأكيد الإجراء</h3>
+                <p id="confirm-modal-text" style="font-size:0.9rem; color:var(--text-muted); margin:0; line-height:1.6;"></p>
+            </div>
+            <div class="modal-footer" style="padding:14px 20px; display:flex; justify-content:center; gap:12px; background:#f1f5f9; direction:rtl;">
+                <button id="btn-confirm-yes" class="btn btn-danger" style="padding:8px 24px; font-size:0.85rem; background:#ef4444; border-color:#ef4444; min-width:100px;">نعم، متأكد</button>
+                <button id="btn-confirm-no" class="btn btn-secondary" style="padding:8px 24px; font-size:0.85rem; min-width:100px;">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. Custom Clan Member Edit Modal -->
+    <div id="edit-member-modal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15, 23, 42, 0.6); z-index:9998; justify-content:center; align-items:center; backdrop-filter:blur(8px);">
+        <div class="modal-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:16px; width:90%; max-width:440px; box-shadow:var(--shadow-lg); display:flex; flex-direction:column; overflow:hidden;">
+            <div class="modal-header" style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; direction: rtl;">
+                <h3 style="margin:0; font-size:1.1rem; color:var(--text-main); font-weight:700;">✏️ تعديل بيانات العضو</h3>
+                <button onclick="closeEditMemberModal()" style="background:transparent; border:none; color:var(--text-muted); font-size:1.6rem; cursor:pointer; line-height:1; font-weight:700;">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:20px; display:flex; flex-direction:column; gap: 14px; direction: rtl; text-align: right;">
+                <input type="hidden" id="edit-member-id">
+                
+                <div class="form-group" style="margin:0;">
+                    <label style="font-weight: 600; font-size: 0.9rem;">الاسم الكامل للعضو</label>
+                    <input type="text" id="edit-member-name" class="form-control" placeholder="ادخل الاسم الكامل...">
+                </div>
+
+                <div class="form-group" style="margin:0;">
+                    <label style="font-weight: 600; font-size: 0.9rem;">رب العائلة الحالي</label>
+                    <select id="edit-member-select-family" class="form-control" style="margin-bottom: 8px;">
+                        <option value="">-- اختر رب عائلة قائم --</option>
+                    </select>
+                    <span style="font-size: 0.8rem; color: var(--text-muted); text-align: center; display: block; margin: 4px 0;">أو اكتب رب عائلة جديد:</span>
+                    <input type="text" id="edit-member-new-family" class="form-control" placeholder="رب عائلة جديد...">
+                </div>
+            </div>
+            <div class="modal-footer" style="padding:12px 20px; display:flex; justify-content:flex-end; align-items:center; gap:10px; background:#f1f5f9; direction: rtl;">
+                <button id="btn-save-member-edit" class="btn btn-primary" style="padding:8px 16px; font-size:0.82rem; font-weight:700; font-family: inherit;">💾 حفظ التعديلات</button>
+                <button onclick="closeEditMemberModal()" class="btn btn-secondary" style="padding:8px 20px; font-size:0.82rem; font-family: inherit;">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. Custom Month Edit Modal -->
+    <div id="edit-month-modal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15, 23, 42, 0.6); z-index:9997; justify-content:center; align-items:center; backdrop-filter:blur(8px);">
+        <div class="modal-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:16px; width:90%; max-width:400px; box-shadow:var(--shadow-lg); display:flex; flex-direction:column; overflow:hidden;">
+            <div class="modal-header" style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; direction: rtl;">
+                <h3 style="margin:0; font-size:1.1rem; color:var(--text-main); font-weight:700;">✏️ تعديل اسم الشهر</h3>
+                <button onclick="closeEditMonthModal()" style="background:transparent; border:none; color:var(--text-muted); font-size:1.6rem; cursor:pointer; line-height:1; font-weight:700;">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:20px; display:flex; flex-direction:column; gap: 14px; direction: rtl; text-align: right;">
+                <input type="hidden" id="edit-month-old-key">
+                <div class="form-group" style="margin:0;">
+                    <label style="font-weight: 600; font-size: 0.9rem;">الاسم الحالي للشهر</label>
+                    <input type="text" id="edit-month-display-old" class="form-control" readonly style="background:#f1f5f9; color:#64748b;">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label style="font-weight: 600; font-size: 0.9rem;">الاسم الجديد للشهر (والسنة)</label>
+                    <input type="text" id="edit-month-new-key" class="form-control" placeholder="مثال: أبريل 2026">
+                </div>
+            </div>
+            <div class="modal-footer" style="padding:12px 20px; display:flex; justify-content:flex-end; align-items:center; gap:10px; background:#f1f5f9; direction: rtl;">
+                <button id="btn-save-month-edit" class="btn btn-primary" style="padding:8px 16px; font-size:0.82rem; font-weight:700; font-family: inherit;">💾 ربط وحفظ التغيير</button>
+                <button onclick="closeEditMonthModal()" class="btn btn-secondary" style="padding:8px 20px; font-size:0.82rem; font-family: inherit;">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script Entrypoint -->
+    <script src="data.js"></script>
+    <script src="app.js?v=5"></script>
+</body>
+</html>

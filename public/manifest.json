@@ -1,0 +1,23 @@
+{
+  "theme_color": "#10b981",
+  "background_color": "#f8fafc",
+  "display": "standalone",
+  "scope": "/",
+  "start_url": "/",
+  "name": "صندوق عائلة آل اطفيحة",
+  "short_name": "صندوق اطفيحة",
+  "description": "بوابة اللجنة المالية الرسمية لجمع التقارير وجباية صندوق عائلة آل اطفيحة",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "/logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
