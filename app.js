@@ -2333,48 +2333,44 @@ document.addEventListener("DOMContentLoaded", () => {
 // =============================================================
 
 function updatePendingBadge() {
-    const pendingList = JSON.parse(localStorage.getItem("cems_pending_users") || "[]");
     const badge = document.getElementById("pending-badge");
     const label = document.getElementById("pending-count-label");
-    
+    const count = state.pendingUsers.length;
+
     if (badge) {
-        if (pendingList.length > 0) {
-            badge.textContent = pendingList.length;
-            badge.style.display = "flex";
-        } else {
-            badge.style.display = "none";
-        }
+        badge.textContent = count;
+        badge.style.display = count > 0 ? "flex" : "none";
     }
-    
     if (label) {
-        label.textContent = `${pendingList.length} طلب${pendingList.length === 1 ? '' : 'ات'}`;
+        label.textContent = `${count} طلب${count === 1 ? '' : 'ات'}`;
     }
 }
 
 function renderPendingUsers() {
     const tbody = document.getElementById("pending-user-rows");
     if (!tbody) return;
-    
+
     tbody.innerHTML = "";
-    const pendingList = JSON.parse(localStorage.getItem("cems_pending_users") || "[]");
-    
-    if (pendingList.length === 0) {
+
+    if (state.pendingUsers.length === 0) {
         tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">لا توجد طلبات تسجيل معلّقة.</td></tr>`;
         return;
     }
-    
-    pendingList.forEach((req, idx) => {
+
+    state.pendingUsers.forEach((req, idx) => {
         const tr = document.createElement("tr");
+        const name = `${req.firstName} ${req.lastName}`;
+        const requestedDate = req.requestedAt ? req.requestedAt.split("T")[0] : "-";
         tr.innerHTML = `
             <td>${idx + 1}</td>
-            <td><strong>${req.name}</strong></td>
+            <td><strong>${name}</strong></td>
             <td>${req.email}</td>
-            <td>${req.role}</td>
-            <td>${req.date || "-"}</td>
+            <td>مشرف مالي</td>
+            <td>${requestedDate}</td>
             <td>
                 <div style="display: flex; gap: 8px;">
-                    <button class="btn btn-primary btn-sm" onclick="approveUser('${req.email}')">✔️ موافقة</button>
-                    <button class="btn btn-danger btn-sm" onclick="rejectUser('${req.email}')">❌ رفض</button>
+                    <button class="btn btn-primary btn-sm" onclick="approveUser('${req.id}')">✔️ موافقة</button>
+                    <button class="btn btn-danger btn-sm" onclick="rejectUser('${req.id}')">❌ رفض</button>
                 </div>
             </td>
         `;
@@ -2382,151 +2378,120 @@ function renderPendingUsers() {
     });
 }
 
-window.approveUser = function(email) {
-    const pendingList = JSON.parse(localStorage.getItem("cems_pending_users") || "[]");
-    const userIdx = pendingList.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-    if (userIdx === -1) return;
-    
-    const user = pendingList[userIdx];
-    pendingList.splice(userIdx, 1);
-    localStorage.setItem("cems_pending_users", JSON.stringify(pendingList));
-    
-    const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
-    dynamicUsers.push({
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        pass: user.pass,
-        firstLoginDone: true,
-        isActive: true
-    });
-    
-    localStorage.setItem("cems_dynamic_users", JSON.stringify(dynamicUsers));
-    
-    alert(`✔️ تم تفعيل حساب المشرف: ${user.name} بنجاح!`);
-    updatePendingBadge();
-    renderPendingUsers();
-    renderActiveUsers();
-};
+window.approveUser = async function(id) {
+    const user = state.pendingUsers.find(u => u.id === id);
+    if (!user) return;
+    const name = `${user.firstName} ${user.lastName}`;
 
-window.rejectUser = function(email) {
-    const pendingList = JSON.parse(localStorage.getItem("cems_pending_users") || "[]");
-    const userIdx = pendingList.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-    if (userIdx === -1) return;
-    
-    const user = pendingList[userIdx];
-    if (confirm(`هل أنت متأكد من رفض طلب تسجيل المشرف: ${user.name}؟`)) {
-        pendingList.splice(userIdx, 1);
-        localStorage.setItem("cems_pending_users", JSON.stringify(pendingList));
+    try {
+        const result = await callApi("approveUser", { id });
+        state.users = result.users;
+        state.pendingUsers = result.pendingUsers;
+
+        alert(`✔️ تم تفعيل حساب المشرف: ${name} بنجاح!`);
         updatePendingBadge();
         renderPendingUsers();
+        renderActiveUsers();
+    } catch (err) {
+        alert("تعذّرت الموافقة على الطلب: " + err.message);
     }
+};
+
+window.rejectUser = function(id) {
+    const user = state.pendingUsers.find(u => u.id === id);
+    if (!user) return;
+    const name = `${user.firstName} ${user.lastName}`;
+
+    if (!confirm(`هل أنت متأكد من رفض طلب تسجيل المشرف: ${name}؟`)) return;
+
+    callApi("rejectUser", { id }).then(pendingUsers => {
+        state.pendingUsers = pendingUsers;
+        updatePendingBadge();
+        renderPendingUsers();
+    }).catch(err => {
+        alert("تعذّر رفض الطلب: " + err.message);
+    });
 };
 
 function renderActiveUsers() {
     const tbody = document.getElementById("active-user-rows");
     if (!tbody) return;
-    
+
     tbody.innerHTML = "";
-    let index = 1;
-    
-    Object.keys(ADMINS).forEach(key => {
-        const admin = ADMINS[key];
+
+    state.users.forEach((user, idx) => {
         const tr = document.createElement("tr");
-        const isMaster = admin.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
-        
-        tr.innerHTML = `
-            <td>${index++}</td>
-            <td><strong>${admin.name}</strong></td>
-            <td>${admin.email}</td>
-            <td>${admin.role}</td>
-            <td><span class="badge badge-success">أساسي</span></td>
-            <td>
-                ${isMaster ? '<span style="color: var(--text-muted); font-size: 0.82rem;">وصول كامل للوحة</span>' : `
-                    <button class="btn btn-secondary btn-sm" onclick="toggleAdminStatus('${key}')">
-                        ${admin.isActive !== false ? '❌ تعطيل' : '✔️ تفعيل'}
+        let actionsHtml;
+        if (user.isMaster) {
+            actionsHtml = '<span style="color: var(--text-muted); font-size: 0.82rem;">وصول كامل للوحة</span>';
+        } else if (user.isBuiltIn) {
+            actionsHtml = `
+                <button class="btn btn-secondary btn-sm" onclick="toggleUserStatus('${user.key}')">
+                    ${user.isActive ? '❌ تعطيل' : '✔️ تفعيل'}
+                </button>
+            `;
+        } else {
+            actionsHtml = `
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-secondary btn-sm" onclick="toggleUserStatus('${user.key}')">
+                        ${user.isActive ? '❌ تعطيل' : '✔️ تفعيل'}
                     </button>
-                `}
-            </td>
-        `;
-        tbody.appendChild(tr);
-    });
-    
-    const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
-    dynamicUsers.forEach((user, idx) => {
-        const tr = document.createElement("tr");
+                    <button class="btn btn-danger btn-sm" onclick="deleteAppUser('${user.key}')">🗑️ حذف</button>
+                </div>
+            `;
+        }
+
         tr.innerHTML = `
-            <td>${index++}</td>
+            <td>${idx + 1}</td>
             <td><strong>${user.name}</strong></td>
             <td>${user.email}</td>
             <td>${user.role}</td>
-            <td><span class="badge ${user.isActive ? 'badge-success' : 'badge-danger'}">${user.isActive ? 'نشط' : 'معطل'}</span></td>
-            <td>
-                <div style="display: flex; gap: 8px;">
-                    <button class="btn btn-secondary btn-sm" onclick="toggleDynamicUserStatus('${user.email}')">
-                        ${user.isActive ? '❌ تعطيل' : '✔️ تفعيل'}
-                    </button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteDynamicUser('${user.email}')">🗑️ حذف</button>
-                </div>
-            </td>
+            <td><span class="badge ${user.isActive ? 'badge-success' : 'badge-danger'}">${user.isBuiltIn ? (user.isActive ? 'أساسي' : 'معطل') : (user.isActive ? 'نشط' : 'معطل')}</span></td>
+            <td>${actionsHtml}</td>
         `;
         tbody.appendChild(tr);
     });
-    
-    const totalCount = Object.keys(ADMINS).length + dynamicUsers.length;
+
     const activeCountLabel = document.getElementById("active-users-count");
     if (activeCountLabel) {
-        activeCountLabel.textContent = `${totalCount} مستخدم`;
+        activeCountLabel.textContent = `${state.users.length} مستخدم`;
     }
 }
 
-window.toggleAdminStatus = function(key) {
-    const admin = ADMINS[key];
-    if (!admin) return;
-    
-    const currentIsActive = admin.isActive !== false;
-    const nextIsActive = !currentIsActive;
-    
-    showConfirm(`هل أنت متأكد من ${nextIsActive ? 'تفعيل' : 'تعطيل'} حساب المشرف المالي: ${admin.name}؟`, () => {
-        admin.isActive = nextIsActive;
-        localStorage.setItem(`cems_admin_active_${key}`, nextIsActive ? 'true' : 'false');
-        renderActiveUsers();
-    });
-};
-
-window.toggleDynamicUserStatus = function(email) {
-    const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
-    const userIdx = dynamicUsers.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-    if (userIdx === -1) return;
-    
-    const user = dynamicUsers[userIdx];
+window.toggleUserStatus = function(key) {
+    const user = state.users.find(u => u.key === key);
+    if (!user) return;
     const nextIsActive = !user.isActive;
-    
-    showConfirm(`هل أنت متأكد من ${nextIsActive ? 'تفعيل' : 'تعطيل'} حساب المشرف المالي: ${user.name}؟`, () => {
-        user.isActive = nextIsActive;
-        localStorage.setItem("cems_dynamic_users", JSON.stringify(dynamicUsers));
-        renderActiveUsers();
+
+    showConfirm(`هل أنت متأكد من ${nextIsActive ? 'تفعيل' : 'تعطيل'} حساب المشرف المالي: ${user.name}؟`, async () => {
+        try {
+            state.users = await callApi("setUserActive", { key, active: nextIsActive });
+            renderActiveUsers();
+        } catch (err) {
+            alert("تعذّر تغيير حالة الحساب: " + err.message);
+        }
     });
 };
 
-window.deleteDynamicUser = function(email) {
-    const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
-    const userIdx = dynamicUsers.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-    if (userIdx === -1) return;
-    
-    const user = dynamicUsers[userIdx];
-    showConfirm(`⚠️ تحذير: هل أنت متأكد من الحذف النهائي لحساب المشرف: ${user.name}؟ لن يتمكن من تسجيل الدخول بعد الآن.`, () => {
-        dynamicUsers.splice(userIdx, 1);
-        localStorage.setItem("cems_dynamic_users", JSON.stringify(dynamicUsers));
-        alert("🗑️ تم حذف حساب المشرف بنجاح.");
-        renderActiveUsers();
+window.deleteAppUser = function(key) {
+    const user = state.users.find(u => u.key === key);
+    if (!user) return;
+
+    showConfirm(`⚠️ تحذير: هل أنت متأكد من الحذف النهائي لحساب المشرف: ${user.name}؟ لن يتمكن من تسجيل الدخول بعد الآن.`, async () => {
+        try {
+            state.users = await callApi("deleteUser", { key });
+            alert("🗑️ تم حذف حساب المشرف بنجاح.");
+            renderActiveUsers();
+        } catch (err) {
+            alert("تعذّر حذف الحساب: " + err.message);
+        }
     });
 };
 
 // Direct Add Supervisor Event
 const btnAddSupervisor = document.getElementById("btn-add-supervisor");
 if (btnAddSupervisor) {
-    btnAddSupervisor.addEventListener("click", () => {
+    btnAddSupervisor.addEventListener("click", async () => {
         const name = document.getElementById("su-name").value.trim();
         const email = document.getElementById("su-email").value.trim().toLowerCase();
         const role = document.getElementById("su-role").value.trim();
@@ -2542,30 +2507,25 @@ if (btnAddSupervisor) {
             return;
         }
 
-        if (findUserByEmail(email)) {
+        if (findUserInState_(email)) {
             alert("هذا البريد الإلكتروني مسجل بالفعل لمشرف آخر.");
             return;
         }
 
-        const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
-        dynamicUsers.push({
-            name,
-            email,
-            role,
-            pass,
-            firstLoginDone: true,
-            isActive: true
-        });
-        localStorage.setItem("cems_dynamic_users", JSON.stringify(dynamicUsers));
+        try {
+            state.users = await callApi("addSupervisor", { name, email, role, pass });
 
-        alert(`✅ تم إضافة المشرف المالي: ${name} وتفعيل حسابه فوراً وبنجاح!`);
-        
-        document.getElementById("su-name").value = "";
-        document.getElementById("su-email").value = "";
-        document.getElementById("su-role").value = "";
-        document.getElementById("su-pass").value = "";
+            alert(`✅ تم إضافة المشرف المالي: ${name} وتفعيل حسابه فوراً وبنجاح!`);
 
-        renderActiveUsers();
+            document.getElementById("su-name").value = "";
+            document.getElementById("su-email").value = "";
+            document.getElementById("su-role").value = "";
+            document.getElementById("su-pass").value = "";
+
+            renderActiveUsers();
+        } catch (err) {
+            alert("تعذّرت إضافة المشرف: " + err.message);
+        }
     });
 }
 
