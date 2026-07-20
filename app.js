@@ -1076,23 +1076,23 @@ function renderLedgerTable() {
                 chk.className = "ledger-checkbox";
                 chk.checked = val > 0;
                 
-                chk.addEventListener("change", (e) => {
+                chk.addEventListener("change", async (e) => {
                     const isChecked = e.target.checked;
                     const paymentVal = isChecked ? 10 : 0;
-                    
-                    member.payments[m.key] = paymentVal;
-                    
-                    let memberTotal = 0;
-                    state.monthsList.forEach(mon => {
-                        memberTotal += (member.payments[mon.key] || 0);
-                    });
-                    member.sum = memberTotal;
-                    tdSum.textContent = memberTotal + " شيكل";
+                    chk.disabled = true;
 
-                    recalculateFamilyTotals(member.parent);
-                    saveToLocalMemory();
-                    renderCharts();
-                    populateMonthFilters();
+                    try {
+                        const result = await callApi("setMemberPayment", { id: member.id, month: m.key, amount: paymentVal });
+                        state.members = result.members;
+                        state.families = result.families;
+                        renderLedgerTable();
+                        renderCharts();
+                        populateMonthFilters();
+                    } catch (err) {
+                        e.target.checked = !isChecked;
+                        alert("تعذّر حفظ الدفعة: " + err.message);
+                        chk.disabled = false;
+                    }
                 });
 
                 tdMonth.appendChild(chk);
@@ -1108,23 +1108,23 @@ function renderLedgerTable() {
             chk.className = "ledger-checkbox";
             chk.checked = val > 0;
             
-            chk.addEventListener("change", (e) => {
+            chk.addEventListener("change", async (e) => {
                 const isChecked = e.target.checked;
                 const paymentVal = isChecked ? 10 : 0;
-                
-                member.payments[filterMonth] = paymentVal;
-                
-                let memberTotal = 0;
-                state.monthsList.forEach(mon => {
-                    memberTotal += (member.payments[mon.key] || 0);
-                });
-                member.sum = memberTotal;
-                tdSum.textContent = memberTotal + " شيكل";
+                chk.disabled = true;
 
-                recalculateFamilyTotals(member.parent);
-                saveToLocalMemory();
-                renderCharts();
-                populateMonthFilters();
+                try {
+                    const result = await callApi("setMemberPayment", { id: member.id, month: filterMonth, amount: paymentVal });
+                    state.members = result.members;
+                    state.families = result.families;
+                    renderLedgerTable();
+                    renderCharts();
+                    populateMonthFilters();
+                } catch (err) {
+                    e.target.checked = !isChecked;
+                    alert("تعذّر حفظ الدفعة: " + err.message);
+                    chk.disabled = false;
+                }
             });
 
             tdMonth.appendChild(chk);
@@ -1891,7 +1891,7 @@ function populateAddMemberFamilies() {
 }
 
 // Add Member Event
-document.getElementById("btn-add-member").addEventListener("click", () => {
+document.getElementById("btn-add-member").addEventListener("click", async () => {
     const nameInput = document.getElementById("add-member-name");
     const selectFamily = document.getElementById("add-member-select-family");
     const newFamilyInput = document.getElementById("add-member-new-family");
@@ -1902,7 +1902,6 @@ document.getElementById("btn-add-member").addEventListener("click", () => {
         return;
     }
 
-    // Determine family head (parent)
     let parent = "";
     const selectedHead = selectFamily.value;
     const newHead = newFamilyInput.value.trim();
@@ -1916,73 +1915,35 @@ document.getElementById("btn-add-member").addEventListener("click", () => {
         return;
     }
 
-    // Check if member already exists
     const exists = state.members.some(m => m.name.trim().toLowerCase() === name.toLowerCase());
     if (exists) {
         alert("هذا العضو مسجل بالفعل في القائمة.");
         return;
     }
 
-    // Generate new member ID
-    const newId = state.members.length > 0 ? Math.max(...state.members.map(m => m.id)) + 1 : 1;
+    const btn = document.getElementById("btn-add-member");
+    btn.disabled = true;
+    try {
+        const result = await callApi("addMember", { name, parent });
+        state.members = result.members;
+        state.families = result.families;
 
-    // Initialize payments
-    const payments = {};
-    state.monthsList.forEach(m => {
-        payments[m.key] = 0;
-    });
+        nameInput.value = "";
+        newFamilyInput.value = "";
 
-    const newMember = {
-        id: newId,
-        name: name,
-        parent: parent,
-        payments: payments,
-        sum: 0
-    };
+        populateAddMemberFamilies();
+        populateReceiptFamilies();
 
-    // Add member to state
-    state.members.push(newMember);
+        renderCharts();
+        renderLedgerTable();
+        renderFamiliesTable();
 
-    // Sync state.families
-    let family = state.families.find(f => f.headName.trim().toLowerCase() === parent.toLowerCase());
-    if (family) {
-        // Increment existing family count and sub
-        family.memberCount += 1;
-        family.subscription += 10;
-        if (!family.membersArr) family.membersArr = [];
-        family.membersArr.push(name);
-        family.membersList = family.membersArr.join("، ");
-    } else {
-        // Create new family
-        const newFamId = state.families.length > 0 ? Math.max(...state.families.map(f => f.familyId)) + 1 : 1;
-        const newFamily = {
-            familyId: newFamId,
-            headName: parent,
-            memberCount: 1,
-            subscription: 10,
-            totalPaid: 0,
-            membersList: name,
-            membersArr: [name]
-        };
-        state.families.push(newFamily);
+        alert(`✅ تم إضافة العضو (${name}) بنجاح وإلحاقه بعائلة (${parent}).`);
+    } catch (err) {
+        alert("تعذّرت إضافة العضو: " + err.message);
+    } finally {
+        btn.disabled = false;
     }
-
-    // Persist
-    saveToLocalMemory();
-
-    // Rerender and clean inputs
-    nameInput.value = "";
-    newFamilyInput.value = "";
-    
-    // Refresh family dropdown list in addition to other views
-    populateAddMemberFamilies();
-    populateReceiptFamilies();
-    
-    renderDashboard();
-    renderLedgerTable();
-    renderFamiliesTable();
-    
-    alert(`✅ تم إضافة العضو (${name}) بنجاح وإلحاقه بعائلة (${parent}).`);
 });
 
 // Add Month Event
@@ -2670,52 +2631,22 @@ if (btnRecalculateAll) {
 // MEMBER DELETION MODULE
 // -------------------------------------------------------------
 window.deleteMember = function(id, name) {
-    showConfirm(`هل أنت متأكد من حذف العضو (${name}) نهائياً من الصندوق؟\nسيتأثر مجموع الأسرة والتقارير المالية بهذا التغيير.`, () => {
-        const member = state.members.find(m => String(m.id) === String(id));
-        if (!member) {
-            console.error("Member to delete not found, ID was:", id);
-            return;
+    showConfirm(`هل أنت متأكد من حذف العضو (${name}) نهائياً من الصندوق؟\nسيتأثر مجموع الأسرة والتقارير المالية بهذا التغيير.`, async () => {
+        try {
+            const result = await callApi("deleteMember", { id });
+            state.members = result.members;
+            state.families = result.families;
+
+            renderLedgerTable();
+            renderFamiliesTable();
+            populateAddMemberFamilies();
+            populateReceiptFamilies();
+            renderCharts();
+
+            alert(`🗑️ تم حذف العضو (${name}) بنجاح.`);
+        } catch (err) {
+            alert("تعذّر حذف العضو: " + err.message);
         }
-        
-        const parentName = member.parent;
-        
-        // Remove from state.members
-        state.members = state.members.filter(m => String(m.id) !== String(id));
-        
-        // Update family details
-        if (parentName) {
-            const family = state.families.find(f => normalizeArabicName(f.headName) === normalizeArabicName(parentName));
-            if (family) {
-                if (family.membersArr) {
-                    family.membersArr = family.membersArr.filter(n => normalizeArabicName(n) !== normalizeArabicName(name));
-                    family.membersList = family.membersArr.join("، ");
-                    family.memberCount = family.membersArr.length;
-                    family.subscription = family.memberCount * 10;
-                } else {
-                    family.memberCount = Math.max(0, family.memberCount - 1);
-                    family.subscription = family.memberCount * 10;
-                }
-                
-                // If family has no more individuals, delete family completely
-                if (family.memberCount === 0) {
-                    state.families = state.families.filter(f => normalizeArabicName(f.headName) !== normalizeArabicName(parentName));
-                } else {
-                    recalculateFamilyTotals(parentName);
-                }
-            }
-        }
-        
-        // Persist changes
-        saveToLocalMemory();
-        
-        // Refresh all views
-        renderLedgerTable();
-        renderFamiliesTable();
-        populateAddMemberFamilies();
-        populateReceiptFamilies();
-        renderCharts();
-        
-        alert(`🗑️ تم حذف العضو (${name}) بنجاح.`);
     });
 };
 
@@ -2967,7 +2898,7 @@ window.closeEditMemberModal = function() {
 // Save edited member info
 const btnSaveMemberEdit = document.getElementById("btn-save-member-edit");
 if (btnSaveMemberEdit) {
-    btnSaveMemberEdit.addEventListener("click", () => {
+    btnSaveMemberEdit.addEventListener("click", async () => {
         const id = document.getElementById("edit-member-id").value;
         const newName = document.getElementById("edit-member-name").value.trim();
         const selectedFam = document.getElementById("edit-member-select-family").value;
@@ -2988,74 +2919,23 @@ if (btnSaveMemberEdit) {
             return;
         }
 
-        const member = state.members.find(m => String(m.id) === String(id));
-        if (!member) return;
+        btnSaveMemberEdit.disabled = true;
+        try {
+            const result = await callApi("updateMember", { id, name: newName, parent });
+            state.members = result.members;
+            state.families = result.families;
 
-        const oldName = member.name;
-        const oldParent = member.parent;
-
-        // 1. Update member details
-        member.name = newName;
-        member.parent = parent;
-
-        // 2. Adjust families list
-        // Remove name from old family members registry
-        if (oldParent) {
-            const oldFamily = state.families.find(f => normalizeArabicName(f.headName) === normalizeArabicName(oldParent));
-            if (oldFamily) {
-                if (oldFamily.membersArr) {
-                    oldFamily.membersArr = oldFamily.membersArr.filter(n => normalizeArabicName(n) !== normalizeArabicName(oldName));
-                    oldFamily.membersList = oldFamily.membersArr.join("، ");
-                    oldFamily.memberCount = oldFamily.membersArr.length;
-                    oldFamily.subscription = oldFamily.memberCount * 10;
-                } else {
-                    oldFamily.memberCount = Math.max(0, oldFamily.memberCount - 1);
-                    oldFamily.subscription = oldFamily.memberCount * 10;
-                }
-                if (oldFamily.memberCount === 0) {
-                    state.families = state.families.filter(f => normalizeArabicName(f.headName) !== normalizeArabicName(oldParent));
-                } else {
-                    recalculateFamilyTotals(oldParent);
-                }
-            }
+            closeEditMemberModal();
+            renderLedgerTable();
+            renderFamiliesTable();
+            populateAddMemberFamilies();
+            populateReceiptFamilies();
+            renderCharts();
+        } catch (err) {
+            alert("تعذّر حفظ تعديل العضو: " + err.message);
+        } finally {
+            btnSaveMemberEdit.disabled = false;
         }
-
-        // Add name to new family register
-        let newFamily = state.families.find(f => normalizeArabicName(f.headName) === normalizeArabicName(parent));
-        if (newFamily) {
-            if (!newFamily.membersArr) newFamily.membersArr = [];
-            if (!newFamily.membersArr.some(n => normalizeArabicName(n) === normalizeArabicName(newName))) {
-                newFamily.membersArr.push(newName);
-            }
-            newFamily.membersList = newFamily.membersArr.join("، ");
-            newFamily.memberCount = newFamily.membersArr.length;
-            newFamily.subscription = newFamily.memberCount * 10;
-            recalculateFamilyTotals(parent);
-        } else {
-            // Create new family registry
-            const newFamId = state.families.length > 0 ? Math.max(...state.families.map(f => f.familyId)) + 1 : 1;
-            state.families.push({
-                familyId: newFamId,
-                headName: parent,
-                memberCount: 1,
-                subscription: 10,
-                totalPaid: 0,
-                membersList: newName,
-                membersArr: [newName]
-            });
-            recalculateFamilyTotals(parent);
-        }
-
-        // Save changes
-        saveToLocalMemory();
-
-        // Close Modal and Refresh
-        closeEditMemberModal();
-        renderLedgerTable();
-        renderFamiliesTable();
-        populateAddMemberFamilies();
-        populateReceiptFamilies();
-        renderDashboard();
     });
 }
 
