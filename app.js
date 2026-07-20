@@ -2092,11 +2092,11 @@ window.viewAttachment = function(expenseId) {
     body.innerHTML = "";
 
     const type = expense.attachment.type;
-    const data = expense.attachment.data;
+    const url = expense.attachment.url;
 
     if (type.startsWith("image/")) {
         const image = document.createElement("img");
-        image.src = data;
+        image.src = url;
         image.alt = expense.attachment.name;
         image.style.maxWidth = "100%";
         image.style.maxHeight = "400px";
@@ -2105,17 +2105,17 @@ window.viewAttachment = function(expenseId) {
         body.appendChild(image);
     } else if (type === "application/pdf") {
         const embed = document.createElement("object");
-        embed.data = data;
+        embed.data = url;
         embed.type = "application/pdf";
         embed.style.width = "100%";
         embed.style.height = "380px";
-        
+
         const fallbackText = document.createElement("div");
         fallbackText.style.textAlign = "center";
         fallbackText.style.padding = "20px";
         fallbackText.innerHTML = `
             <p style="margin-bottom:12px; color:var(--text-muted);">لا تدعم المعاينة الفورية لـ PDF في هذا المتصفح.</p>
-            <a href="${data}" download="${expense.attachment.name}" class="btn btn-primary" style="font-size:0.85rem;">📥 تحميل ملف الـ PDF مباشرة</a>
+            <a href="${url}" target="_blank" rel="noopener" class="btn btn-primary" style="font-size:0.85rem;">📥 فتح ملف الـ PDF في تبويب جديد</a>
         `;
         embed.appendChild(fallbackText);
         body.appendChild(embed);
@@ -2127,19 +2127,15 @@ window.viewAttachment = function(expenseId) {
             <div style="font-size:3rem; margin-bottom:10px;">📄</div>
             <h4 style="font-size:1.05rem; color:var(--text-main); margin-bottom:6px;">مستند خارجي: ${expense.attachment.name}</h4>
             <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:14px;">لا تتوفر معاينة مباشرة لهذا النوع من الملفات (${type}).</p>
-            <p style="font-weight:600; color:var(--primary); font-size:0.85rem;">انقر فوق زر التحميل أدناه لحفظ المستند على جهازك.</p>
+            <p style="font-weight:600; color:var(--primary); font-size:0.85rem;">انقر فوق زر التحميل أدناه لفتح المستند.</p>
         `;
         body.appendChild(infoDiv);
     }
 
-    // Download action hook
+    // Download action hook — url is a cross-origin Drive link, so a
+    // download-attribute anchor won't force a save-as; open it instead.
     downloadBtn.onclick = function() {
-        const link = document.createElement("a");
-        link.href = data;
-        link.download = expense.attachment.name;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        window.open(url, "_blank", "noopener");
     };
 
     modal.style.display = "flex";
@@ -2195,11 +2191,14 @@ function renderExpensesTable() {
 }
 
 window.deleteExpense = function(id) {
-    showConfirm("هل أنت متأكد من حذف أمر الصرف هذا؟ سيتم استعادة المبلغ للرصيد الصافي.", () => {
-        state.expenses = state.expenses.filter(e => String(e.id) !== String(id));
-        saveToLocalMemory();
-        renderExpensesTable();
-        updateIndicators();
+    showConfirm("هل أنت متأكد من حذف أمر الصرف هذا؟ سيتم استعادة المبلغ للرصيد الصافي.", async () => {
+        try {
+            state.expenses = await callApi("deleteExpense", { id });
+            renderExpensesTable();
+            updateIndicators();
+        } catch (err) {
+            alert("تعذّر حذف أمر الصرف: " + err.message);
+        }
     });
 };
 
@@ -2260,28 +2259,35 @@ document.getElementById("btn-add-expense").addEventListener("click", async () =>
         }
     }
 
-    const newExpense = {
-        id: "exp_" + Date.now(),
-        date: dateVal,
-        amount: amountVal,
-        reason: reasonVal,
-        category: categoryVal,
-        authorized: authorizedVal || (state.currentUser ? state.currentUser.name : "اللجنة المالية"),
-        attachment: attachmentObj
-    };
+    const btn = document.getElementById("btn-add-expense");
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span style="display:inline-block; width:14px; height:14px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite; margin-left:8px; vertical-align:middle;"></span> جاري الحفظ على جوجل شيت...`;
 
-    state.expenses.push(newExpense);
-    saveToLocalMemory();
+    try {
+        state.expenses = await callApi("addExpense", {
+            date: dateVal,
+            amount: amountVal,
+            reason: reasonVal,
+            category: categoryVal,
+            authorized: authorizedVal || (state.currentUser ? state.currentUser.name : "اللجنة المالية"),
+            attachment: attachmentObj
+        });
 
-    // Clear form (keep date and authorized)
-    document.getElementById("exp-amount").value = "";
-    document.getElementById("exp-reason").value = "";
-    if (fileInput) fileInput.value = ""; // Clear file selector
+        document.getElementById("exp-amount").value = "";
+        document.getElementById("exp-reason").value = "";
+        if (fileInput) fileInput.value = "";
 
-    renderExpensesTable();
-    updateIndicators();
+        renderExpensesTable();
+        updateIndicators();
 
-    alert(`✅ تم تسجيل أمر الصرف بنجاح!\nالمبلغ: ${amountVal} شيكل\nالسبب: ${reasonVal}\nالرصيد الصافي الجديد: ${netBalance - amountVal} شيكل`);
+        alert(`✅ تم تسجيل أمر الصرف بنجاح!\nالمبلغ: ${amountVal} شيكل\nالسبب: ${reasonVal}\nالرصيد الصافي الجديد: ${netBalance - amountVal} شيكل`);
+    } catch (err) {
+        alert("تعذّر تسجيل أمر الصرف: " + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
 });
 
 // Export expenses to Excel
