@@ -1990,7 +1990,7 @@ document.getElementById("btn-add-month").addEventListener("click", async () => {
     try {
         const result = await callApi("addMonth", { key: monthKey, id: monthId });
         state.monthsList = result.months.map(m => ({ key: m.key, id: m.id }));
-        state.selectedLedgerMonths.push(monthKey);
+        state.selectedLedgerMonths = result.months.filter(m => m.selected).map(m => m.key);
         state.members = result.members;
 
         monthNameInput.value = "";
@@ -3000,7 +3000,7 @@ if (btnSaveMonthEdit) {
         try {
             const result = await callApi("updateMonth", { oldKey, newKey });
             state.monthsList = result.months.map(m => ({ key: m.key, id: m.id }));
-            state.selectedLedgerMonths = state.selectedLedgerMonths.map(k => k === oldKey ? newKey : k);
+            state.selectedLedgerMonths = result.months.filter(m => m.selected).map(m => m.key);
             state.members = result.members;
 
             closeEditMonthModal();
@@ -3032,7 +3032,7 @@ window.deleteMonth = function() {
         try {
             const result = await callApi("deleteMonth", { key: monthKey });
             state.monthsList = result.months.map(m => ({ key: m.key, id: m.id }));
-            state.selectedLedgerMonths = state.selectedLedgerMonths.filter(k => k !== monthKey);
+            state.selectedLedgerMonths = result.months.filter(m => m.selected).map(m => m.key);
             state.members = result.members;
 
             populateMonthFilters();
