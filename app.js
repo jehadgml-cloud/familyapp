@@ -1474,7 +1474,7 @@ document.getElementById("btn-print-receipt").addEventListener("click", () => {
 });
 
 // Record payment from receipt generator directly
-document.getElementById("btn-save-receipt-payment").addEventListener("click", () => {
+document.getElementById("btn-save-receipt-payment").addEventListener("click", async () => {
     const headName = receiptSelectFamily.value;
     if (!headName) {
         alert("الرجاء اختيار العائلة أولاً.");
@@ -1493,52 +1493,32 @@ document.getElementById("btn-save-receipt-payment").addEventListener("click", ()
         return;
     }
 
-    // Collect checked months keys
     const checkedMonthsKeys = [];
     checkedChks.forEach(chk => {
         const m = state.monthsList.find(mon => mon.id == chk.value || mon.key == chk.value);
         if (m) checkedMonthsKeys.push(m.key);
     });
 
-    let updatedCount = 0;
-    state.members.forEach(m => {
-        // Matches if it's the family head himself or parent equals family head
-        const matchesFamily = (m.parent && m.parent.trim().toLowerCase() === headName.trim().toLowerCase()) 
-                            || (m.name.trim().toLowerCase() === headName.trim().toLowerCase());
-        
-        if (matchesFamily) {
-            checkedMonthsKeys.forEach(mKey => {
-                m.payments[mKey] = 10; // set 10 shikel payment
-            });
-            // Recalculate member total
-            let memberTotal = 0;
-            state.monthsList.forEach(mon => {
-                memberTotal += (m.payments[mon.key] || 0);
-            });
-            m.sum = memberTotal;
-            updatedCount++;
-        }
-    });
+    const btn = document.getElementById("btn-save-receipt-payment");
+    btn.disabled = true;
+    try {
+        const result = await callApi("setFamilyPayments", { headName, months: checkedMonthsKeys });
+        state.members = result.members;
+        state.families = result.families;
 
-    // Recalculate family totalPaid
-    recalculateFamilyTotals(headName);
+        renderCharts();
 
-    // Save state to localStorage
-    saveToLocalMemory();
+        alert(`✅ تم بنجاح تسجيل دفعة العائلة: (${headName}) لشهور: [${checkedMonthsKeys.join("، ")}]. تم تحديث الداشبورد والمخططات البيانية!`);
 
-    // Trigger complete dashboards and charts refresh
-    renderCharts();
-
-    // Show success dialog
-    alert(`✅ تم بنجاح تسجيل دفعة العائلة: (${headName}) لشهور: [${checkedMonthsKeys.join("، ")}]. تم تحديث حسابات (${updatedCount}) أفراد وتحديث الداشبورد والمخططات البيانية!`);
-
-    // Reset input fields
-    checkedChks.forEach(chk => chk.checked = false);
-    receiptAmount.value = 0;
-    receiptNotes.value = "";
-    
-    // Update preview with empty state
-    updatePrintPreview();
+        checkedChks.forEach(chk => chk.checked = false);
+        receiptAmount.value = 0;
+        receiptNotes.value = "";
+        updatePrintPreview();
+    } catch (err) {
+        alert("تعذّر تسجيل الدفعة: " + err.message);
+    } finally {
+        btn.disabled = false;
+    }
 });
 
 // -------------------------------------------------------------
