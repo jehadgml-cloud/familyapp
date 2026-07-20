@@ -216,8 +216,8 @@ function updateTabTitle(tabId) {
     tabTitleText.textContent = titles[tabId] || "صندوق العشيرة المالي";
 }
 
-// Login Handler — email-based
-btnSubmitLogin.addEventListener("click", () => {
+// Login Handler — email-based, verified against the Google Sheet backend
+btnSubmitLogin.addEventListener("click", async () => {
     const email = loginEmailInput.value.trim().toLowerCase();
     const pass = loginPassInput.value;
 
@@ -230,34 +230,31 @@ btnSubmitLogin.addEventListener("click", () => {
         return;
     }
 
-    const userObj = findUserByEmail(email);
-    if (!userObj) {
-        showLoginError("لا يوجد حساب بهذا البريد. تحقق من أنك مسجّل أو أرسل طلب للتسجيل.");
-        return;
-    }
+    btnSubmitLogin.disabled = true;
+    try {
+        const result = await callApi("login", { email, pass });
+        if (result.error) {
+            showLoginError(result.error);
+            return;
+        }
+        const userObj = result.user;
+        localStorage.setItem("cems_logged_email", email);
 
-    if (userObj.pass !== pass) {
-        showLoginError("كلمة المرور غير صحيحة. يرجى المحاولة مجدداً.");
-        return;
-    }
-
-    if (userObj.isActive === false) {
-        showLoginError("حسابك معطّل حالياً. تواصل مع المسؤول لفعل حسابك.");
-        return;
-    }
-
-    localStorage.setItem("cems_logged_email", email);
-
-    // Force password change on first login for built-in admins
-    if (userObj.firstLoginDone === false && userObj.isBuiltIn) {
-        showPasswordChangeDialog(userObj, () => doLogin(userObj));
-    } else {
-        doLogin(userObj);
+        // Force password change on first login for built-in admins
+        if (userObj.firstLoginDone === false && userObj.isBuiltIn) {
+            showPasswordChangeDialog(userObj, () => doLogin(userObj));
+        } else {
+            doLogin(userObj);
+        }
+    } catch (err) {
+        showLoginError("تعذّر تسجيل الدخول: " + err.message);
+    } finally {
+        btnSubmitLogin.disabled = false;
     }
 });
 
 // Password Reset Handler (Email-based)
-document.getElementById("link-reset-pass").addEventListener("click", (e) => {
+document.getElementById("link-reset-pass").addEventListener("click", async (e) => {
     e.preventDefault();
     const email = loginEmailInput.value.trim().toLowerCase();
     if (!email) {
@@ -265,37 +262,27 @@ document.getElementById("link-reset-pass").addEventListener("click", (e) => {
         return;
     }
 
-    const userObj = findUserByEmail(email);
+    const userObj = findUserInState_(email);
     if (!userObj) {
         alert("لا يوجد حساب مشرف مالي مسجل بهذا البريد الإلكتروني.");
         return;
     }
 
     const confirmReset = confirm(`هل أنت متأكد من رغبتك في إعادة تعيين رمز المرور لحساب المشرف (${userObj.name})؟ \n\nسيتم استخدام رمز المرور الافتراضي (ABC12345) وسيُطلب منك تغييره عند الدخول.`);
-    if (confirmReset) {
-        if (userObj.isBuiltIn) {
-            const key = userObj.key;
-            localStorage.removeItem(`cems_admin_pass_${key}`);
-            localStorage.removeItem(`cems_admin_firstlogin_${key}`);
-            ADMINS[key].pass = "ABC12345";
-            ADMINS[key].firstLoginDone = false;
-        } else {
-            const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
-            const idx = dynamicUsers.findIndex(u => u.email.toLowerCase() === email);
-            if (idx !== -1) {
-                dynamicUsers[idx].pass = "ABC12345";
-                dynamicUsers[idx].firstLoginDone = false;
-                localStorage.setItem("cems_dynamic_users", JSON.stringify(dynamicUsers));
-            }
-        }
+    if (!confirmReset) return;
+
+    try {
+        await callApi("resetPassword", { email });
         alert(`تمت إعادة تعيين رمز مرور الحساب بنجاح إلى: ABC12345 \nيرجى تسجيل الدخول فيه الآن وتعديله.`);
         loginPassInput.value = "";
         loginErrorMsg.style.display = "none";
+    } catch (err) {
+        alert("تعذّرت إعادة تعيين رمز المرور: " + err.message);
     }
 });
 
 // Submit Registration Request
-document.getElementById("btn-submit-register").addEventListener("click", () => {
+document.getElementById("btn-submit-register").addEventListener("click", async () => {
     const firstName = document.getElementById("reg-firstname").value.trim();
     const lastName = document.getElementById("reg-lastname").value.trim();
     const email = document.getElementById("reg-email").value.trim().toLowerCase();
@@ -323,43 +310,29 @@ document.getElementById("btn-submit-register").addEventListener("click", () => {
         return;
     }
 
-    if (findUserByEmail(email)) {
-        errorEl.textContent = "هذا البريد الإلكتروني مسجل بالفعل لمشرف آخر.";
+    if (findUserInState_(email) || state.pendingUsers.some(r => r.email.toLowerCase() === email)) {
+        errorEl.textContent = "هذا البريد الإلكتروني مسجل بالفعل أو له طلب تسجيل معلق.";
         errorEl.style.display = "block";
         return;
     }
 
-    const pendingList = JSON.parse(localStorage.getItem("cems_pending_users") || "[]");
-    if (pendingList.some(r => r.email === email)) {
-        errorEl.textContent = "يوجد بالفعل طلب تسجيل معلق لهذا البريد الإلكتروني.";
+    try {
+        state.pendingUsers = await callApi("requestRegistration", { firstName, lastName, email, pass });
+
+        alert(`✅ تم إرسال طلب تسجيلك بنجاح باسم (${firstName} ${lastName})! يرجى انتظار موافقة المسؤول جهاد زكري لتتمكن من تسجيل الدخول.`);
+
+        document.getElementById("reg-firstname").value = "";
+        document.getElementById("reg-lastname").value = "";
+        document.getElementById("reg-email").value = "";
+        document.getElementById("reg-pass").value = "";
+        document.getElementById("reg-pass2").value = "";
+
+        document.getElementById("panel-register").style.display = "none";
+        document.getElementById("panel-login").style.display = "block";
+    } catch (err) {
+        errorEl.textContent = "تعذّر إرسال الطلب: " + err.message;
         errorEl.style.display = "block";
-        return;
     }
-
-    const name = firstName + " " + lastName;
-    const role = "مشرف مالي";
-
-    // Add to pending
-    pendingList.push({
-        name,
-        email,
-        role,
-        pass,
-        date: new Date().toISOString().split("T")[0]
-    });
-    localStorage.setItem("cems_pending_users", JSON.stringify(pendingList));
-
-    alert(`✅ تم إرسال طلب تسجيلك بنجاح باسم (${name})! يرجى انتظار موافقة المسؤول جهاد زكري لتتمكن من تسجيل الدخول.`);
-    
-    // Clear
-    document.getElementById("reg-firstname").value = "";
-    document.getElementById("reg-lastname").value = "";
-    document.getElementById("reg-email").value = "";
-    document.getElementById("reg-pass").value = "";
-    document.getElementById("reg-pass2").value = "";
-
-    document.getElementById("panel-register").style.display = "none";
-    document.getElementById("panel-login").style.display = "block";
 });
 
 // Forced first-login password change dialog (built-in admins)
@@ -413,7 +386,7 @@ function showPasswordChangeDialog(userObj, onSuccess) {
 
     document.body.appendChild(overlay);
 
-    document.getElementById('btn-confirm-pwd').addEventListener('click', () => {
+    document.getElementById('btn-confirm-pwd').addEventListener('click', async () => {
         const p1 = document.getElementById('new-pass-1').value;
         const p2 = document.getElementById('new-pass-2').value;
         const errEl = document.getElementById('pwd-change-error');
@@ -429,17 +402,17 @@ function showPasswordChangeDialog(userObj, onSuccess) {
             return;
         }
 
-        // Save for built-in admin via ADMINS key
-        userObj.pass = p1;
-        userObj.firstLoginDone = true;
-        const adminKey = Object.keys(ADMINS).find(k => ADMINS[k].email.toLowerCase() === userObj.email.toLowerCase());
-        if (adminKey) {
-            localStorage.setItem(`cems_admin_pass_${adminKey}`, p1);
-            localStorage.setItem(`cems_admin_firstlogin_${adminKey}`, 'done');
+        try {
+            const result = await callApi("changePassword", { key: userObj.key, newPass: p1 });
+            userObj.pass = undefined;
+            userObj.firstLoginDone = true;
+            Object.assign(userObj, result.user);
+            overlay.remove();
+            onSuccess();
+        } catch (err) {
+            errEl.style.display = 'block';
+            errEl.textContent = 'تعذّر حفظ كلمة المرور: ' + err.message;
         }
-
-        overlay.remove();
-        onSuccess();
     });
 }
 
@@ -473,8 +446,9 @@ function doLogin(userObj) {
     const expAuthField = document.getElementById("exp-authorized");
     if (expAuthField) expAuthField.value = userObj.name;
 
-    // Show User Management tab only for master admin
-    const isMaster = userObj.email && userObj.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
+    // Show User Management tab only for the master admin (per the Users
+    // sheet's isMaster flag, not a hardcoded email compare)
+    const isMaster = userObj.isMaster === true;
     const navMgmt = document.getElementById("nav-usermgmt");
     if (navMgmt) navMgmt.style.display = isMaster ? "flex" : "none";
 
