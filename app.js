@@ -1,8 +1,33 @@
 // app.js
 
-// Admin credentials — Palestinian Family Financial Committee
-// Master admin: jehadgml@gmail.com (full access, cannot be removed)
-const MASTER_ADMIN_EMAIL = "jehadgml@gmail.com";
+// Google Apps Script Web App URL — paste the deployment URL from
+// gas/DEPLOYMENT.md step 3 here. Every piece of app data is read from and
+// written to the Google Sheet behind this URL; there is no local fallback.
+const API_URL = "PASTE_YOUR_WEB_APP_URL_HERE";
+
+// Calls one backend action. Uses text/plain as the Content-Type so the
+// browser treats this as a CORS-simple request and skips the preflight
+// OPTIONS request — Apps Script Web Apps don't answer OPTIONS.
+async function callApi(action, payload) {
+    let res;
+    try {
+        res = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({ action, payload: payload || {} })
+        });
+    } catch (networkErr) {
+        throw new Error("تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت وحاول مجدداً. (" + networkErr.message + ")");
+    }
+    if (!res.ok) {
+        throw new Error("خطأ من الخادم (HTTP " + res.status + "). حاول مجدداً لاحقاً.");
+    }
+    const body = await res.json();
+    if (body.error) {
+        throw new Error(body.error);
+    }
+    return body.result;
+}
 
 const ADMINS = {
     admin1: {
@@ -111,14 +136,19 @@ const DEFAULT_MONTHS = [
 ];
 
 
-// Application State
+// Application State — populated from the Google Sheet backend via
+// loadDataFromServer() on startup; nothing here is read from localStorage.
 let state = {
     currentUser: null,
-    members: [],      // from 'التحصيل الشهري'
-    families: [],     // from 'وصولات العائلات'
-    monthsList: JSON.parse(JSON.stringify(DEFAULT_MONTHS)),
-    expenses: [],     // Expenditure / withdrawal records
-    originalWorkbook: null // SheetJS raw object
+    members: [],
+    families: [],
+    monthsList: [],
+    selectedLedgerMonths: [],
+    expenses: [],
+    users: [],
+    pendingUsers: [],
+    settings: {},
+    originalWorkbook: null // SheetJS raw object, session-only (never persisted)
 };
 
 // Chart instances
