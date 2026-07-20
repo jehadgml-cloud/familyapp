@@ -66,7 +66,7 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
     action = body.action;
     const payload = body.payload || {};
-    const handler = ACTIONS[action];
+    const handler = Object.prototype.hasOwnProperty.call(ACTIONS, action) ? ACTIONS[action] : null;
     if (!handler) return jsonResponse_({ error: 'إجراء غير معروف: ' + action });
 
     if (READ_ONLY_ACTIONS[action]) {
