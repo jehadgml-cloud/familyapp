@@ -707,7 +707,7 @@ function processWorkbook(workbook) {
     } else {
         // Fallback: group dynamically from التحصيل الشهري if no receipts sheet
         const grouped = {};
-        state.members.forEach(m => {
+        parsedMembers.forEach(m => {
             const familyName = m.parent || m.name;
             if (!grouped[familyName]) {
                 grouped[familyName] = { members: [], totalPaid: 0 };
