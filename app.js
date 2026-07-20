@@ -34,95 +34,14 @@ async function callApi(action, payload) {
     return body.result;
 }
 
-const ADMINS = {
-    admin1: {
-        name: "جهاد زكري إسماعيل اطفيحة",
-        role: "رئيس اللجنة المالية للعشيرة",
-        pass: "ABC12345",
-        email: "jehadgml@gmail.com",
-        firstLoginDone: false
-    },
-    admin2: {
-        name: "أشرف يوسف محمود اطفيحة",
-        role: "نائب رئيس اللجنة المالية",
-        pass: "ABC12345",
-        email: "ashraf.atfihah@gmail.com",
-        firstLoginDone: false
-    },
-    admin3: {
-        name: "إبراهيم محمد إبراهيم اطفيحة",
-        role: "أمين صندوق العشيرة",
-        pass: "ABC12345",
-        email: "ibrahim.atfihah@gmail.com",
-        firstLoginDone: false
-    },
-    admin4: {
-        name: "معتز أمين محمد محمود اطفيحة",
-        role: "المراقب المالي للصندوق",
-        pass: "ABC12345",
-        email: "moataz.atfihah@gmail.com",
-        firstLoginDone: false
-    },
-    admin5: {
-        name: "حبيب محمود محمد اطفيحة",
-        role: "منسق التحصيل والوصولات",
-        pass: "ABC12345",
-        email: "habib.atfihah@gmail.com",
-        firstLoginDone: false
-    }
-};
-
-// Load any saved admin passwords/emails/states from localStorage
-function loadAdminPasswords() {
-    Object.keys(ADMINS).forEach(key => {
-        const savedPass = localStorage.getItem(`cems_admin_pass_${key}`);
-        const savedEmail = localStorage.getItem(`cems_admin_email_${key}`);
-        const savedFirstLogin = localStorage.getItem(`cems_admin_firstlogin_${key}`);
-        const savedActive = localStorage.getItem(`cems_admin_active_${key}`);
-        if (savedPass) ADMINS[key].pass = savedPass;
-        if (savedEmail) ADMINS[key].email = savedEmail;
-        if (savedFirstLogin === 'done') ADMINS[key].firstLoginDone = true;
-        if (savedActive === 'false') {
-            ADMINS[key].isActive = false;
-        } else {
-            ADMINS[key].isActive = true;
-        }
-    });
-}
-loadAdminPasswords();
-
-// Find user info crosschecking built-in ADMINS and approved dynamic users
-function findUserByEmail(email) {
+// Looks up a user in the already-loaded state.users (populated from the
+// Sheet by loadDataFromServer()). Used only for instant client-side
+// pre-checks (e.g. "this email is already registered") — the server
+// performs the authoritative check on every mutating call.
+function findUserInState_(email) {
     if (!email) return null;
-    const lowerEmail = email.trim().toLowerCase();
-    
-    // 1. Check built-in admins
-    for (const key of Object.keys(ADMINS)) {
-        if (ADMINS[key].email && ADMINS[key].email.toLowerCase() === lowerEmail) {
-            return {
-                key: key,
-                name: ADMINS[key].name,
-                role: ADMINS[key].role,
-                pass: ADMINS[key].pass,
-                email: ADMINS[key].email,
-                firstLoginDone: ADMINS[key].firstLoginDone,
-                isActive: ADMINS[key].isActive !== false,
-                isBuiltIn: true
-            };
-        }
-    }
-
-    // 2. Check approved dynamic users in localStorage
-    const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
-    const foundUser = dynamicUsers.find(u => u.email.toLowerCase() === lowerEmail);
-    if (foundUser) {
-        return {
-            ...foundUser,
-            isBuiltIn: false
-        };
-    }
-
-    return null;
+    const lower = email.trim().toLowerCase();
+    return state.users.find(u => u.email.toLowerCase() === lower) || null;
 }
 
 const DEFAULT_MONTHS = [
@@ -183,22 +102,28 @@ const navLinks = document.querySelectorAll(".nav-link");
 const tabContents = document.querySelectorAll(".tab-content");
 
 // Initial Setup
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     // Current date fill
     const today = new Date().toISOString().split("T")[0];
     liveDateSpan.textContent = today;
     document.getElementById("p-receipt-date").textContent = today;
     document.getElementById("r-date").textContent = today;
 
-    // *** CRITICAL: Load cached data FIRST ***
-    loadCachedData();
+    // *** CRITICAL: Load data from the Google Sheet backend FIRST ***
+    try {
+        await loadDataFromServer();
+    } catch (err) {
+        alert("تعذّر الاتصال بقاعدة البيانات (جوجل شيت): " + err.message + "\n\nتحقق من رابط API_URL في app.js ومن اتصالك بالإنترنت.");
+    }
     populateMonthFilters();
     populateAddMemberFamilies();
 
-    // Check if user is logged in (session persisted by email)
+    // Check if user is logged in (session persisted by email) — the email
+    // is only a client-side "stay logged in" convenience; the account
+    // itself is re-validated against the freshly-loaded state.users.
     const cachedEmail = localStorage.getItem("cems_logged_email");
     if (cachedEmail) {
-        const userObj = findUserByEmail(cachedEmail);
+        const userObj = findUserInState_(cachedEmail);
         if (userObj) {
             doLogin(userObj);
         } else {
@@ -611,64 +536,46 @@ function handleExcelFile(file) {
     uploadStatus.style.color = "var(--accent)";
 
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         try {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
             state.originalWorkbook = workbook;
 
-            // Process sheets
-            processWorkbook(workbook);
+            const parsed = processWorkbook(workbook);
 
-            uploadStatus.innerHTML = `<strong>✅ تم تحميل الملف "${file.name}" بنجاح!</strong><br>تم استخراج البيانات وحفظها في المتصفح بشكل دائم — لن تحتاج لإعادة رفعه مجدداً.`;
+            uploadStatus.textContent = `جاري رفع بيانات الملف "${file.name}" إلى جوجل شيت...`;
+
+            const result = await callApi("bulkImportMembers", {
+                members: parsed.members,
+                families: parsed.families,
+                months: state.monthsList
+            });
+            state.members = result.members;
+            state.families = result.families;
+            state.monthsList = result.months;
+
+            uploadStatus.innerHTML = `<strong>✅ تم تحميل الملف "${file.name}" ورفعه لجوجل شيت بنجاح!</strong>`;
             uploadStatus.style.color = "var(--success)";
 
-            // Save filename only (we do NOT save the huge raw binary to prevent storage crashes/freezes)
-            try {
-                localStorage.setItem("cems_excel_filename", file.name);
-                // Clean up any old binary to free space
-                localStorage.removeItem("cems_excel_binary");
-            } catch (storageErr) {
-                console.warn("Could not store Excel filename:", storageErr);
-            }
+            populateMonthFilters();
+            populateAddMemberFamilies();
+            populateReceiptFamilies();
+            renderCharts();
+            renderLedgerTable();
+            renderFamiliesTable();
 
-            // Save JSON data as well
-            saveToLocalMemory();
-
-            // Direct transfer to dashboard
             setTimeout(() => {
                 switchTab("dashboard-tab");
             }, 1200);
 
         } catch (err) {
             console.error(err);
-            uploadStatus.textContent = "فشلت قراءة الملف المالي: " + err.message;
+            uploadStatus.textContent = "فشلت قراءة الملف المالي أو رفعه: " + err.message;
             uploadStatus.style.color = "var(--danger)";
         }
     };
     reader.readAsArrayBuffer(file);
-}
-
-// Helper: convert ArrayBuffer to Base64 string
-function arrayBufferToBase64(buffer) {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-}
-
-// Helper: convert Base64 back to Uint8Array
-function base64ToUint8Array(base64) {
-    const binary = atob(base64);
-    const len = binary.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-        bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
 }
 
 // Helper: Find sheet header row index dynamically to handle custom formatting or padding rows
@@ -743,7 +650,6 @@ function processWorkbook(workbook) {
 
             parsedMembers.push(member);
         });
-        state.members = parsedMembers;
     }
 
     // 2. Process "وصولات العائلات" — the primary family receipts sheet
@@ -798,7 +704,6 @@ function processWorkbook(workbook) {
                 membersArr: membersArr               // array for receipt rendering
             });
         });
-        state.families = parsedFamilies;
     } else {
         // Fallback: group dynamically from التحصيل الشهري if no receipts sheet
         const grouped = {};
@@ -823,135 +728,56 @@ function processWorkbook(workbook) {
                 membersArr: grouped[headName].members
             });
         });
-        state.families = parsedFamilies;
     }
+
+    return { members: parsedMembers, families: parsedFamilies };
 }
 
-// Local Storage Sync (with safety error handling for browser storage limit)
-function saveToLocalMemory() {
+// Loads every piece of app data from the Google Sheet backend in one round
+// trip and populates `state`. Called once on startup, and again by the
+// "reload from sheet" button (see below) or after an Excel bulk import.
+async function loadDataFromServer() {
+    const data = await callApi("getAllData", {});
+    state.members = data.members;
+    state.families = data.families;
+    state.monthsList = data.months.map(m => ({ key: m.key, id: m.id }));
+    state.selectedLedgerMonths = data.months.filter(m => m.selected).map(m => m.key);
+    state.expenses = data.expenses;
+    state.users = data.users;
+    state.pendingUsers = data.pendingUsers;
+    state.settings = data.settings;
+
+    const statusEl = document.getElementById("upload-status");
+    if (statusEl) {
+        if (state.members.length > 0) {
+            statusEl.innerHTML = `<strong>✅ البيانات محملة من جوجل شيت</strong><br>${state.members.length} فرد، ${state.families.length} عائلة. يمكنك رفع ملف Excel لاستبدال البيانات بالكامل.`;
+        } else {
+            statusEl.innerHTML = `<strong>لا توجد بيانات أعضاء بعد.</strong><br>ارفع ملف Excel هنا لتعبئة قاعدة البيانات على جوجل شيت لأول مرة.`;
+        }
+        statusEl.style.color = "var(--success)";
+    }
+    updateIndicators();
+}
+
+// Reload button — re-fetches everything from the Sheet (e.g. after another
+// user, or a direct edit on the Sheet itself, changed something).
+document.getElementById("btn-clear-cache").addEventListener("click", async () => {
+    if (!confirm("سيتم إعادة تحميل كل البيانات من جوجل شيت، وسيتم فقدان أي تعديل لم يُحفظ بعد. متابعة؟")) return;
     try {
-        localStorage.setItem("cems_data_members", JSON.stringify(state.members));
-        localStorage.setItem("cems_data_families", JSON.stringify(state.families));
-        localStorage.setItem("cems_data_months", JSON.stringify(state.monthsList));
-        localStorage.setItem("cems_data_expenses", JSON.stringify(state.expenses));
-        localStorage.setItem("cems_selected_ledger_months", JSON.stringify(state.selectedLedgerMonths || []));
-    } catch (err) {
-        console.error("Storage error:", err);
-        if (err.name === "QuotaExceededError" || err.code === 22) {
-            alert("⚠️ تنبيه: مساحة التخزين في المتصفح ممتلئة! يرجى إزالة المرفقات الكبيرة أو تنظيف سجل الصرف للمتابعة دون فقدان البيانات.");
-        }
-    }
-}
+        uploadStatus.textContent = "جاري إعادة التحميل من جوجل شيت...";
+        uploadStatus.style.color = "var(--accent)";
+        await loadDataFromServer();
 
-function loadCachedData() {
-    // Load months list cache first
-    const cachedMonths = localStorage.getItem("cems_data_months");
-    if (cachedMonths) {
-        state.monthsList = JSON.parse(cachedMonths);
-    } else {
-        state.monthsList = JSON.parse(JSON.stringify(DEFAULT_MONTHS));
-    }
-
-    // Initialize/load selected Ledger months
-    const cachedSelected = localStorage.getItem("cems_selected_ledger_months");
-    if (cachedSelected) {
-        try {
-            state.selectedLedgerMonths = JSON.parse(cachedSelected);
-        } catch(e) {
-            state.selectedLedgerMonths = state.monthsList.map(m => m.key);
-        }
-    } else {
-        // By default, select all months
-        state.selectedLedgerMonths = state.monthsList.map(m => m.key);
-    }
-
-    // Load expenses
-    const cachedExpenses = localStorage.getItem("cems_data_expenses");
-    state.expenses = cachedExpenses ? JSON.parse(cachedExpenses) : [];
-    
-    // Ensure all expenses have valid IDs to enable working Delete options
-    let idUpdated = false;
-    state.expenses.forEach((e, idx) => {
-        if (!e.id) {
-            e.id = "exp_" + Date.now() + "_" + idx;
-            idUpdated = true;
-        }
-    });
-    if (idUpdated) {
-        saveToLocalMemory();
-    }
-
-    // Load JSON dataset directly (very fast, no freeze)
-    const cachedMembers = localStorage.getItem("cems_data_members");
-    const cachedFamilies = localStorage.getItem("cems_data_families");
-    const cachedFilename = localStorage.getItem("cems_excel_filename");
-
-    // Clean up large raw Excel binary if it exists to free up localStorage space
-    if (localStorage.getItem("cems_excel_binary")) {
-        localStorage.removeItem("cems_excel_binary");
-    }
-
-    if (cachedMembers && cachedFamilies) {
-        state.members = JSON.parse(cachedMembers);
-        state.families = JSON.parse(cachedFamilies);
-        
-        // Update upload status info
-        const statusEl = document.getElementById("upload-status");
-        if (statusEl) {
-            statusEl.innerHTML = `<strong>✅ البيانات محملة من الذاكرة الدائمة</strong><br>آخر ملف: "${cachedFilename || 'احصاء ال اطفيحه'}". يمكنك رفع ملف جديد لتحديث البيانات.`;
-            statusEl.style.color = "var(--success)";
-        }
-        updateIndicators();
-    } else {
-        // No local cache yet, load the hardcoded default database seed
-        state.members = JSON.parse(JSON.stringify(DEFAULT_MEMBERS));
-        state.families = JSON.parse(JSON.stringify(DEFAULT_FAMILIES));
-        
-        // Save it so that localStorage has baseline values
-        saveToLocalMemory();
-        updateIndicators();
-        
-        const statusEl = document.getElementById("upload-status");
-        if (statusEl) {
-            statusEl.innerHTML = `<strong>✅ تم تحميل كشف الأسماء الافتراضي تلقائياً بالتطبيق</strong><br>البيانات مضمنة وجاهزة للعمل والتعديل مباشرة دون حاجة لرفع Excel.`;
-            statusEl.style.color = "var(--success)";
-        }
-    }
-}
-
-// Clear browser cache
-document.getElementById("btn-clear-cache").addEventListener("click", () => {
-    if (confirm("هل أنت متأكد من رغبتك في مسح كافة التعديلات الحالية وإعادة تعيين كشف الصندوق إلى البيانات الافتراضية؟")) {
-        localStorage.removeItem("cems_data_members");
-        localStorage.removeItem("cems_data_families");
-        localStorage.removeItem("cems_data_months");
-        localStorage.removeItem("cems_data_expenses");
-        localStorage.removeItem("cems_excel_binary");
-        localStorage.removeItem("cems_excel_filename");
-        
-        // Reload default data
-        state.monthsList = JSON.parse(JSON.stringify(DEFAULT_MONTHS));
-        state.members = JSON.parse(JSON.stringify(DEFAULT_MEMBERS));
-        state.families = JSON.parse(JSON.stringify(DEFAULT_FAMILIES));
-        state.expenses = [];
-        state.originalWorkbook = null;
-        
-        saveToLocalMemory();
-        updateIndicators();
-        
-        uploadStatus.textContent = "تمت إعادة تعيين كشف الصندوق إلى الأسماء الافتراضية بنجاح ونظيفة.";
-        uploadStatus.style.color = "var(--success)";
-        
-        // Refresh tables/views
         populateMonthFilters();
         populateAddMemberFamilies();
         populateReceiptFamilies();
-        
-        renderDashboard();
+        renderCharts();
         renderLedgerTable();
         renderFamiliesTable();
-        
-        alert("تمت إعادة تعيين كشف الصندوق للبيانات الافتراضية بنجاح.");
+
+        alert("✅ تمت إعادة تحميل البيانات من جوجل شيت بنجاح.");
+    } catch (err) {
+        alert("تعذّرت إعادة التحميل: " + err.message);
     }
 });
 
