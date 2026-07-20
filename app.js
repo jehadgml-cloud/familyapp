@@ -146,21 +146,30 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Multi-month select all/none controls
     const btnSelectAll = document.getElementById("btn-select-all-months");
     if (btnSelectAll) {
-        btnSelectAll.addEventListener("click", () => {
-            state.selectedLedgerMonths = state.monthsList.map(m => m.key);
-            saveToLocalMemory();
-            populateMonthFilters();
-            renderLedgerTable();
+        btnSelectAll.addEventListener("click", async () => {
+            const next = state.monthsList.map(m => m.key);
+            try {
+                await callApi("setSelectedMonths", { selected: next });
+                state.selectedLedgerMonths = next;
+                populateMonthFilters();
+                renderLedgerTable();
+            } catch (err) {
+                alert("تعذّر تحديد كل الأشهر: " + err.message);
+            }
         });
     }
 
     const btnSelectNone = document.getElementById("btn-select-none-months");
     if (btnSelectNone) {
-        btnSelectNone.addEventListener("click", () => {
-            state.selectedLedgerMonths = [];
-            saveToLocalMemory();
-            populateMonthFilters();
-            renderLedgerTable();
+        btnSelectNone.addEventListener("click", async () => {
+            try {
+                await callApi("setSelectedMonths", { selected: [] });
+                state.selectedLedgerMonths = [];
+                populateMonthFilters();
+                renderLedgerTable();
+            } catch (err) {
+                alert("تعذّر إلغاء تحديد الأشهر: " + err.message);
+            }
         });
     }
 });
@@ -1836,8 +1845,9 @@ function populateMonthFilters() {
                     chk.value = m.key;
                     chk.checked = isChecked;
                     
-                    chk.addEventListener("change", (e) => {
+                    chk.addEventListener("change", async (e) => {
                         const activeChecked = e.target.checked;
+                        const previous = state.selectedLedgerMonths.slice();
                         if (activeChecked) {
                             if (!state.selectedLedgerMonths.includes(m.key)) {
                                 state.selectedLedgerMonths.push(m.key);
@@ -1847,8 +1857,18 @@ function populateMonthFilters() {
                             state.selectedLedgerMonths = state.selectedLedgerMonths.filter(k => k !== m.key);
                             label.classList.remove("checked");
                         }
-                        saveToLocalMemory();
-                        renderLedgerTable();
+                        chk.disabled = true;
+                        try {
+                            await callApi("setSelectedMonths", { selected: state.selectedLedgerMonths });
+                            renderLedgerTable();
+                        } catch (err) {
+                            state.selectedLedgerMonths = previous;
+                            e.target.checked = !activeChecked;
+                            label.classList.toggle("checked", previous.includes(m.key));
+                            alert("تعذّر حفظ خيارات الأشهر: " + err.message);
+                        } finally {
+                            chk.disabled = false;
+                        }
                     });
                     
                     label.appendChild(chk);
@@ -1947,7 +1967,7 @@ document.getElementById("btn-add-member").addEventListener("click", async () => 
 });
 
 // Add Month Event
-document.getElementById("btn-add-month").addEventListener("click", () => {
+document.getElementById("btn-add-month").addEventListener("click", async () => {
     const monthNameInput = document.getElementById("add-month-name");
     const monthIdSelect = document.getElementById("add-month-id");
 
@@ -1959,39 +1979,33 @@ document.getElementById("btn-add-month").addEventListener("click", () => {
 
     const monthId = parseInt(monthIdSelect.value);
 
-    // Check if month already exists
     const exists = state.monthsList.some(mon => mon.key.trim().toLowerCase() === monthKey.toLowerCase());
     if (exists) {
         alert("هذا الشهر مضاف بالفعل في القائمة.");
         return;
     }
 
-    // Add month to state.monthsList
-    state.monthsList.push({
-        key: monthKey,
-        id: monthId
-    });
+    const btn = document.getElementById("btn-add-month");
+    btn.disabled = true;
+    try {
+        const result = await callApi("addMonth", { key: monthKey, id: monthId });
+        state.monthsList = result.months.map(m => ({ key: m.key, id: m.id }));
+        state.selectedLedgerMonths.push(monthKey);
+        state.members = result.members;
 
-    // Initialize this month's payment to 0 for all existing members
-    state.members.forEach(m => {
-        if (m.payments[monthKey] === undefined) {
-            m.payments[monthKey] = 0;
-        }
-    });
+        monthNameInput.value = "";
 
-    // Persist
-    saveToLocalMemory();
+        populateMonthFilters();
+        renderCharts();
+        renderLedgerTable();
+        renderFamiliesTable();
 
-    // Rerender and clean inputs
-    monthNameInput.value = "";
-
-    // Refresh dynamically populated month components
-    populateMonthFilters();
-    renderDashboard();
-    renderLedgerTable();
-    renderFamiliesTable();
-    
-    alert(`✅ تم إضافة الشهر (${monthKey}) بنجاح إلى جدول الاشتراكات والتحصيل.`);
+        alert(`✅ تم إضافة الشهر (${monthKey}) بنجاح إلى جدول الاشتراكات والتحصيل.`);
+    } catch (err) {
+        alert("تعذّرت إضافة الشهر: " + err.message);
+    } finally {
+        btn.disabled = false;
+    }
 });
 
 // =============================================================
@@ -2963,7 +2977,7 @@ window.closeEditMonthModal = function() {
 
 const btnSaveMonthEdit = document.getElementById("btn-save-month-edit");
 if (btnSaveMonthEdit) {
-    btnSaveMonthEdit.addEventListener("click", () => {
+    btnSaveMonthEdit.addEventListener("click", async () => {
         const oldKey = document.getElementById("edit-month-old-key").value;
         const newKey = document.getElementById("edit-month-new-key").value.trim();
 
@@ -2976,44 +2990,35 @@ if (btnSaveMonthEdit) {
             return;
         }
 
-        // Check if new month key already exists
         const exists = state.monthsList.some(m => m.key.toLowerCase() === newKey.toLowerCase());
         if (exists) {
             alert("هذا الاسم مسجل بالفعل لشهر آخر.");
             return;
         }
 
-        // Find and update month key
-        const monthObj = state.monthsList.find(m => m.key === oldKey);
-        if (!monthObj) return;
-        monthObj.key = newKey;
+        btnSaveMonthEdit.disabled = true;
+        try {
+            const result = await callApi("updateMonth", { oldKey, newKey });
+            state.monthsList = result.months.map(m => ({ key: m.key, id: m.id }));
+            state.selectedLedgerMonths = state.selectedLedgerMonths.map(k => k === oldKey ? newKey : k);
+            state.members = result.members;
 
-        // Update payments key for all members
-        state.members.forEach(member => {
-            if (member.payments[oldKey] !== undefined) {
-                member.payments[newKey] = member.payments[oldKey];
-                delete member.payments[oldKey];
-            }
-        });
+            closeEditMonthModal();
+            populateMonthFilters();
 
-        // Save changes
-        saveToLocalMemory();
-        closeEditMonthModal();
+            const monthSelect = document.getElementById("ledger-filter-month");
+            if (monthSelect) monthSelect.value = newKey;
 
-        // Reload filters
-        populateMonthFilters();
-        
-        // Retain the newly updated month in filter select
-        const monthSelect = document.getElementById("ledger-filter-month");
-        if (monthSelect) {
-            monthSelect.value = newKey;
+            renderLedgerTable();
+            renderFamiliesTable();
+            populateAddMemberFamilies();
+            populateReceiptFamilies();
+            renderCharts();
+        } catch (err) {
+            alert("تعذّر حفظ تعديل الشهر: " + err.message);
+        } finally {
+            btnSaveMonthEdit.disabled = false;
         }
-
-        renderLedgerTable();
-        renderFamiliesTable();
-        populateAddMemberFamilies();
-        populateReceiptFamilies();
-        renderDashboard();
     });
 }
 
@@ -3023,44 +3028,28 @@ window.deleteMonth = function() {
     const monthKey = monthSelect.value;
     if (monthKey === "all") return;
 
-    showConfirm(`هل أنت متأكد من حذف شهر (${monthKey}) نهائياً من الصندوق؟\nسيتم إزالة كافة اشتراكات هذا الشهر المسجلة لجميع الأعضاء.`, () => {
-        // 1. Remove from state.monthsList
-        state.monthsList = state.monthsList.filter(m => m.key !== monthKey);
+    showConfirm(`هل أنت متأكد من حذف شهر (${monthKey}) نهائياً من الصندوق؟\nسيتم إزالة كافة اشتراكات هذا الشهر المسجلة لجميع الأعضاء.`, async () => {
+        try {
+            const result = await callApi("deleteMonth", { key: monthKey });
+            state.monthsList = result.months.map(m => ({ key: m.key, id: m.id }));
+            state.selectedLedgerMonths = state.selectedLedgerMonths.filter(k => k !== monthKey);
+            state.members = result.members;
 
-        // 2. Remove the payments field from all members
-        state.members.forEach(member => {
-            delete member.payments[monthKey];
+            populateMonthFilters();
+            const select = document.getElementById("ledger-filter-month");
+            if (select) select.value = "all";
 
-            // Re-calculate member sum
-            let memberTotal = 0;
-            state.monthsList.forEach(m => {
-                memberTotal += (member.payments[m.key] || 0);
-            });
-            member.sum = memberTotal;
-        });
+            const ops = document.getElementById("month-ops-controls");
+            if (ops) ops.style.display = "none";
 
-        // 3. Re-calculate family totals
-        state.families.forEach(fam => {
-            recalculateFamilyTotals(fam.headName);
-        });
-
-        // 4. Save and reload
-        saveToLocalMemory();
-
-        // 5. Reset month filter dropdown selection
-        populateMonthFilters();
-        const select = document.getElementById("ledger-filter-month");
-        if (select) select.value = "all";
-        
-        // Hide ops controls
-        const ops = document.getElementById("month-ops-controls");
-        if (ops) ops.style.display = "none";
-
-        renderLedgerTable();
-        renderFamiliesTable();
-        populateAddMemberFamilies();
-        populateReceiptFamilies();
-        renderDashboard();
+            renderLedgerTable();
+            renderFamiliesTable();
+            populateAddMemberFamilies();
+            populateReceiptFamilies();
+            renderCharts();
+        } catch (err) {
+            alert("تعذّر حذف الشهر: " + err.message);
+        }
     });
 };
 
