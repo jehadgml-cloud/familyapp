@@ -3,7 +3,7 @@
 // Google Apps Script Web App URL — paste the deployment URL from
 // gas/DEPLOYMENT.md step 3 here. Every piece of app data is read from and
 // written to the Google Sheet behind this URL; there is no local fallback.
-const API_URL = "PASTE_YOUR_WEB_APP_URL_HERE";
+const API_URL = "https://script.google.com/macros/s/AKfycbxokCwpd7RhoFboc9_3VVqzpdObXAL_x6pje6uHbN6is8z91BIM7zaTLFGp6P8ttOAa/exec";
 
 // Calls one backend action. Uses text/plain as the Content-Type so the
 // browser treats this as a CORS-simple request and skips the preflight
