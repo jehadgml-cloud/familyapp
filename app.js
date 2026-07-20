@@ -404,9 +404,9 @@ function showPasswordChangeDialog(userObj, onSuccess) {
 
         try {
             const result = await callApi("changePassword", { key: userObj.key, newPass: p1 });
+            Object.assign(userObj, result.user);
             userObj.pass = undefined;
             userObj.firstLoginDone = true;
-            Object.assign(userObj, result.user);
             overlay.remove();
             onSuccess();
         } catch (err) {
