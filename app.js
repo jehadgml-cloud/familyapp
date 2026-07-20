@@ -2752,10 +2752,9 @@ window.closeSignatureModal = function() {
     }
 };
 
-function saveSignature() {
+async function saveSignature() {
     if (!currentSigIndex) return;
-    
-    // Check if canvas has drawing in it
+
     const blank = document.createElement("canvas");
     blank.width = sigCanvas.width;
     blank.height = sigCanvas.height;
@@ -2763,38 +2762,42 @@ function saveSignature() {
         alert("الرجاء رسم التوقيع أولاً قبل الحفظ.");
         return;
     }
-    
+
     const dataUrl = sigCanvas.toDataURL();
-    
-    // Save signature under monthly key
     const monthVal = document.getElementById("report-select-month").value;
-    const savedSigsKey = `cems_report_sigs_${monthVal}`;
-    const sigs = JSON.parse(localStorage.getItem(savedSigsKey) || "{}");
-    sigs[currentSigIndex] = dataUrl;
-    localStorage.setItem(savedSigsKey, JSON.stringify(sigs));
-    
-    window.updateSignaturesDisplay();
-    closeSignatureModal();
+
+    try {
+        await callApi("saveSignature", { month: monthVal, slotIndex: currentSigIndex, data: dataUrl });
+        await window.updateSignaturesDisplay();
+        closeSignatureModal();
+    } catch (err) {
+        alert("تعذّر حفظ التوقيع: " + err.message);
+    }
 }
 
 window.clearSignature = function(index) {
-    showConfirm("هل أنت متأكد من إزالة هذا التوقيع الرقمي؟", () => {
+    showConfirm("هل أنت متأكد من إزالة هذا التوقيع الرقمي؟", async () => {
         const monthVal = document.getElementById("report-select-month").value;
-        const savedSigsKey = `cems_report_sigs_${monthVal}`;
-        const sigs = JSON.parse(localStorage.getItem(savedSigsKey) || "{}");
-        delete sigs[index];
-        localStorage.setItem(savedSigsKey, JSON.stringify(sigs));
-        window.updateSignaturesDisplay();
+        try {
+            await callApi("clearSignature", { month: monthVal, slotIndex: index });
+            await window.updateSignaturesDisplay();
+        } catch (err) {
+            alert("تعذّر إزالة التوقيع: " + err.message);
+        }
     });
 };
 
-window.updateSignaturesDisplay = function() {
+window.updateSignaturesDisplay = async function() {
     const reportSelect = document.getElementById("report-select-month");
     if (!reportSelect) return;
     const monthVal = reportSelect.value;
-    const savedSigsKey = `cems_report_sigs_${monthVal}`;
-    const sigs = JSON.parse(localStorage.getItem(savedSigsKey) || "{}");
-    
+    let sigs = {};
+    try {
+        sigs = await callApi("getSignatures", { month: monthVal });
+    } catch (err) {
+        console.error("Could not load signatures:", err);
+    }
+
     for (let i = 1; i <= 5; i++) {
         const area = document.getElementById(`sig-area-${i}`);
         if (!area) continue;
