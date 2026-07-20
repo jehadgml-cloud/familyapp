@@ -1,0 +1,33 @@
+# Next.js build and development folders
+.next/
+out/
+build/
+
+# Dependency folders
+node_modules/
+
+# Local configuration environment settings override
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Operating System temporary caches and system configurations
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE/Editor cache folders
+.idea/
+.vscode/
+.impeccable/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

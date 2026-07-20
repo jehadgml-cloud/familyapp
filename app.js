@@ -1,0 +1,3369 @@
+// app.js
+
+// Admin credentials — Palestinian Family Financial Committee
+// Master admin: jehadgml@gmail.com (full access, cannot be removed)
+const MASTER_ADMIN_EMAIL = "jehadgml@gmail.com";
+
+const ADMINS = {
+    admin1: {
+        name: "جهاد زكري إسماعيل اطفيحة",
+        role: "رئيس اللجنة المالية للعشيرة",
+        pass: "ABC12345",
+        email: "jehadgml@gmail.com",
+        firstLoginDone: false
+    },
+    admin2: {
+        name: "أشرف يوسف محمود اطفيحة",
+        role: "نائب رئيس اللجنة المالية",
+        pass: "ABC12345",
+        email: "ashraf.atfihah@gmail.com",
+        firstLoginDone: false
+    },
+    admin3: {
+        name: "إبراهيم محمد إبراهيم اطفيحة",
+        role: "أمين صندوق العشيرة",
+        pass: "ABC12345",
+        email: "ibrahim.atfihah@gmail.com",
+        firstLoginDone: false
+    },
+    admin4: {
+        name: "معتز أمين محمد محمود اطفيحة",
+        role: "المراقب المالي للصندوق",
+        pass: "ABC12345",
+        email: "moataz.atfihah@gmail.com",
+        firstLoginDone: false
+    },
+    admin5: {
+        name: "حبيب محمود محمد اطفيحة",
+        role: "منسق التحصيل والوصولات",
+        pass: "ABC12345",
+        email: "habib.atfihah@gmail.com",
+        firstLoginDone: false
+    }
+};
+
+// Load any saved admin passwords/emails/states from localStorage
+function loadAdminPasswords() {
+    Object.keys(ADMINS).forEach(key => {
+        const savedPass = localStorage.getItem(`cems_admin_pass_${key}`);
+        const savedEmail = localStorage.getItem(`cems_admin_email_${key}`);
+        const savedFirstLogin = localStorage.getItem(`cems_admin_firstlogin_${key}`);
+        const savedActive = localStorage.getItem(`cems_admin_active_${key}`);
+        if (savedPass) ADMINS[key].pass = savedPass;
+        if (savedEmail) ADMINS[key].email = savedEmail;
+        if (savedFirstLogin === 'done') ADMINS[key].firstLoginDone = true;
+        if (savedActive === 'false') {
+            ADMINS[key].isActive = false;
+        } else {
+            ADMINS[key].isActive = true;
+        }
+    });
+}
+loadAdminPasswords();
+
+// Find user info crosschecking built-in ADMINS and approved dynamic users
+function findUserByEmail(email) {
+    if (!email) return null;
+    const lowerEmail = email.trim().toLowerCase();
+    
+    // 1. Check built-in admins
+    for (const key of Object.keys(ADMINS)) {
+        if (ADMINS[key].email && ADMINS[key].email.toLowerCase() === lowerEmail) {
+            return {
+                key: key,
+                name: ADMINS[key].name,
+                role: ADMINS[key].role,
+                pass: ADMINS[key].pass,
+                email: ADMINS[key].email,
+                firstLoginDone: ADMINS[key].firstLoginDone,
+                isActive: ADMINS[key].isActive !== false,
+                isBuiltIn: true
+            };
+        }
+    }
+
+    // 2. Check approved dynamic users in localStorage
+    const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
+    const foundUser = dynamicUsers.find(u => u.email.toLowerCase() === lowerEmail);
+    if (foundUser) {
+        return {
+            ...foundUser,
+            isBuiltIn: false
+        };
+    }
+
+    return null;
+}
+
+const DEFAULT_MONTHS = [
+    { key: "أبريل 2026", id: 4 },
+    { key: "مايو 2026", id: 5 },
+    { key: "يونيو 2026", id: 6 },
+    { key: "يوليو 2026", id: 7 },
+    { key: "أغسطس 2026", id: 8 },
+    { key: "سبتمبر 2026", id: 9 },
+    { key: "أكتوبر 2026", id: 10 },
+    { key: "نوفمبر 2026", id: 11 },
+    { key: "ديسمبر 2026", id: 12 },
+    { key: "يناير 2027", id: 1 },
+    { key: "فبراير 2027", id: 2 },
+    { key: "مارس 2027", id: 3 }
+];
+
+
+// Application State
+let state = {
+    currentUser: null,
+    members: [],      // from 'التحصيل الشهري'
+    families: [],     // from 'وصولات العائلات'
+    monthsList: JSON.parse(JSON.stringify(DEFAULT_MONTHS)),
+    expenses: [],     // Expenditure / withdrawal records
+    originalWorkbook: null // SheetJS raw object
+};
+
+// Chart instances
+let monthlyChartInstance = null;
+let commitmentChartInstance = null;
+
+// DOM Elements
+const loginPortal = document.getElementById("login-portal");
+const appContainer = document.getElementById("app-container");
+const btnSubmitLogin = document.getElementById("btn-submit-login");
+const loginEmailInput = document.getElementById("login-email");
+const loginPassInput = document.getElementById("login-pass");
+const loginErrorMsg = document.getElementById("login-error");
+
+const adminAvatar = document.getElementById("admin-avatar");
+const adminName = document.getElementById("admin-name");
+const adminRole = document.getElementById("admin-role");
+const tabTitleText = document.getElementById("tab-title-text");
+const liveDateSpan = document.getElementById("live-date");
+
+const dropZone = document.getElementById("drop-zone");
+const btnFileSelect = document.getElementById("btn-file-select");
+const uploadStatus = document.getElementById("upload-status");
+
+// Tab Switching Local State
+const navLinks = document.querySelectorAll(".nav-link");
+const tabContents = document.querySelectorAll(".tab-content");
+
+// Initial Setup
+document.addEventListener("DOMContentLoaded", () => {
+    // Current date fill
+    const today = new Date().toISOString().split("T")[0];
+    liveDateSpan.textContent = today;
+    document.getElementById("p-receipt-date").textContent = today;
+    document.getElementById("r-date").textContent = today;
+
+    // *** CRITICAL: Load cached data FIRST ***
+    loadCachedData();
+    populateMonthFilters();
+    populateAddMemberFamilies();
+
+    // Check if user is logged in (session persisted by email)
+    const cachedEmail = localStorage.getItem("cems_logged_email");
+    if (cachedEmail) {
+        const userObj = findUserByEmail(cachedEmail);
+        if (userObj) {
+            doLogin(userObj);
+        } else {
+            localStorage.removeItem("cems_logged_email");
+        }
+    }
+
+    // Register tab / Login toggle
+    document.getElementById("link-show-register").addEventListener("click", e => {
+        e.preventDefault();
+        document.getElementById("panel-login").style.display = "none";
+        document.getElementById("panel-register").style.display = "block";
+    });
+    document.getElementById("link-back-login").addEventListener("click", e => {
+        e.preventDefault();
+        document.getElementById("panel-register").style.display = "none";
+        document.getElementById("panel-login").style.display = "block";
+    });
+
+    // Multi-month select all/none controls
+    const btnSelectAll = document.getElementById("btn-select-all-months");
+    if (btnSelectAll) {
+        btnSelectAll.addEventListener("click", () => {
+            state.selectedLedgerMonths = state.monthsList.map(m => m.key);
+            saveToLocalMemory();
+            populateMonthFilters();
+            renderLedgerTable();
+        });
+    }
+
+    const btnSelectNone = document.getElementById("btn-select-none-months");
+    if (btnSelectNone) {
+        btnSelectNone.addEventListener("click", () => {
+            state.selectedLedgerMonths = [];
+            saveToLocalMemory();
+            populateMonthFilters();
+            renderLedgerTable();
+        });
+    }
+});
+
+// Navigation Switcher
+navLinks.forEach(link => {
+    link.addEventListener("click", () => {
+        const tabId = link.getAttribute("data-tab");
+        switchTab(tabId);
+    });
+});
+
+function switchTab(tabId) {
+    navLinks.forEach(l => l.classList.remove("active"));
+    tabContents.forEach(c => c.classList.remove("active"));
+
+    const activeLink = document.querySelector(`.nav-link[data-tab="${tabId}"]`);
+    if(activeLink) activeLink.classList.add("active");
+    
+    const activeContent = document.getElementById(tabId);
+    if(activeContent) activeContent.classList.add("active");
+
+    updateTabTitle(tabId);
+
+    // Refresh charts if dashboard is selected
+    if (tabId === "dashboard-tab") {
+        renderCharts();
+    } else if (tabId === "ledger-tab") {
+        renderLedgerTable();
+    } else if (tabId === "families-tab") {
+        renderFamiliesTable();
+    } else if (tabId === "receipt-tab") {
+        populateReceiptFamilies();
+    } else if (tabId === "reports-tab") {
+        renderMonthlyReport();
+    } else if (tabId === "usermgmt-tab") {
+        renderPendingUsers();
+        renderActiveUsers();
+    }
+}
+
+function updateTabTitle(tabId) {
+    const titles = {
+        "dashboard-tab": "لوحة الاتجاهات والتحليلات البيانية",
+        "ledger-tab": "دفتر كشف التحصيل الشهري العام",
+        "families-tab": "دليل العائلات ومشاركة الوصل السريع",
+        "receipt-tab": "إصدار وطباعة وصولات الدفع",
+        "reports-tab": "التقارير والمراجعات المالية الشهرية والسنوية",
+        "expenses-tab": "سجل أوامر الصرف والمدفوعات المعتمدة",
+        "usermgmt-tab": "إدارة المشرفين وطلبات التسجيل",
+        "upload-tab": "بوابة تحميل وتخزين قاعدة البيانات"
+    };
+    tabTitleText.textContent = titles[tabId] || "صندوق العشيرة المالي";
+}
+
+// Login Handler — email-based
+btnSubmitLogin.addEventListener("click", () => {
+    const email = loginEmailInput.value.trim().toLowerCase();
+    const pass = loginPassInput.value;
+
+    if (!email) {
+        showLoginError("الرجاء إدخال بريدك الإلكتروني.");
+        return;
+    }
+    if (!pass) {
+        showLoginError("الرجاء إدخال كلمة المرور.");
+        return;
+    }
+
+    const userObj = findUserByEmail(email);
+    if (!userObj) {
+        showLoginError("لا يوجد حساب بهذا البريد. تحقق من أنك مسجّل أو أرسل طلب للتسجيل.");
+        return;
+    }
+
+    if (userObj.pass !== pass) {
+        showLoginError("كلمة المرور غير صحيحة. يرجى المحاولة مجدداً.");
+        return;
+    }
+
+    if (userObj.isActive === false) {
+        showLoginError("حسابك معطّل حالياً. تواصل مع المسؤول لفعل حسابك.");
+        return;
+    }
+
+    localStorage.setItem("cems_logged_email", email);
+
+    // Force password change on first login for built-in admins
+    if (userObj.firstLoginDone === false && userObj.isBuiltIn) {
+        showPasswordChangeDialog(userObj, () => doLogin(userObj));
+    } else {
+        doLogin(userObj);
+    }
+});
+
+// Password Reset Handler (Email-based)
+document.getElementById("link-reset-pass").addEventListener("click", (e) => {
+    e.preventDefault();
+    const email = loginEmailInput.value.trim().toLowerCase();
+    if (!email) {
+        alert("الرجاء إدخال البريد الإلكتروني للحساب المراد إعادة تعيين رمزه أولاً.");
+        return;
+    }
+
+    const userObj = findUserByEmail(email);
+    if (!userObj) {
+        alert("لا يوجد حساب مشرف مالي مسجل بهذا البريد الإلكتروني.");
+        return;
+    }
+
+    const confirmReset = confirm(`هل أنت متأكد من رغبتك في إعادة تعيين رمز المرور لحساب المشرف (${userObj.name})؟ \n\nسيتم استخدام رمز المرور الافتراضي (ABC12345) وسيُطلب منك تغييره عند الدخول.`);
+    if (confirmReset) {
+        if (userObj.isBuiltIn) {
+            const key = userObj.key;
+            localStorage.removeItem(`cems_admin_pass_${key}`);
+            localStorage.removeItem(`cems_admin_firstlogin_${key}`);
+            ADMINS[key].pass = "ABC12345";
+            ADMINS[key].firstLoginDone = false;
+        } else {
+            const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
+            const idx = dynamicUsers.findIndex(u => u.email.toLowerCase() === email);
+            if (idx !== -1) {
+                dynamicUsers[idx].pass = "ABC12345";
+                dynamicUsers[idx].firstLoginDone = false;
+                localStorage.setItem("cems_dynamic_users", JSON.stringify(dynamicUsers));
+            }
+        }
+        alert(`تمت إعادة تعيين رمز مرور الحساب بنجاح إلى: ABC12345 \nيرجى تسجيل الدخول فيه الآن وتعديله.`);
+        loginPassInput.value = "";
+        loginErrorMsg.style.display = "none";
+    }
+});
+
+// Submit Registration Request
+document.getElementById("btn-submit-register").addEventListener("click", () => {
+    const firstName = document.getElementById("reg-firstname").value.trim();
+    const lastName = document.getElementById("reg-lastname").value.trim();
+    const email = document.getElementById("reg-email").value.trim().toLowerCase();
+    const pass = document.getElementById("reg-pass").value;
+    const pass2 = document.getElementById("reg-pass2").value;
+    const errorEl = document.getElementById("reg-error");
+
+    errorEl.style.display = "none";
+
+    if (!firstName || !lastName || !email || !pass || !pass2) {
+        errorEl.textContent = "الرجاء تعبئة كافة الحقول المطلوبة.";
+        errorEl.style.display = "block";
+        return;
+    }
+
+    if (pass.length < 6) {
+        errorEl.textContent = "يجب أن تكون كلمة المرور 6 أحرف على الأقل.";
+        errorEl.style.display = "block";
+        return;
+    }
+
+    if (pass !== pass2) {
+        errorEl.textContent = "كلمتا المرور غير متطابقتين.";
+        errorEl.style.display = "block";
+        return;
+    }
+
+    if (findUserByEmail(email)) {
+        errorEl.textContent = "هذا البريد الإلكتروني مسجل بالفعل لمشرف آخر.";
+        errorEl.style.display = "block";
+        return;
+    }
+
+    const pendingList = JSON.parse(localStorage.getItem("cems_pending_users") || "[]");
+    if (pendingList.some(r => r.email === email)) {
+        errorEl.textContent = "يوجد بالفعل طلب تسجيل معلق لهذا البريد الإلكتروني.";
+        errorEl.style.display = "block";
+        return;
+    }
+
+    const name = firstName + " " + lastName;
+    const role = "مشرف مالي";
+
+    // Add to pending
+    pendingList.push({
+        name,
+        email,
+        role,
+        pass,
+        date: new Date().toISOString().split("T")[0]
+    });
+    localStorage.setItem("cems_pending_users", JSON.stringify(pendingList));
+
+    alert(`✅ تم إرسال طلب تسجيلك بنجاح باسم (${name})! يرجى انتظار موافقة المسؤول جهاد زكري لتتمكن من تسجيل الدخول.`);
+    
+    // Clear
+    document.getElementById("reg-firstname").value = "";
+    document.getElementById("reg-lastname").value = "";
+    document.getElementById("reg-email").value = "";
+    document.getElementById("reg-pass").value = "";
+    document.getElementById("reg-pass2").value = "";
+
+    document.getElementById("panel-register").style.display = "none";
+    document.getElementById("panel-login").style.display = "block";
+});
+
+// Forced first-login password change dialog (built-in admins)
+function showPasswordChangeDialog(userObj, onSuccess) {
+    const existing = document.getElementById('pwd-change-dialog');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'pwd-change-dialog';
+    overlay.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+        background: rgba(0,0,0,0.7); z-index: 200;
+        display: flex; align-items: center; justify-content: center;
+        font-family: 'Cairo', sans-serif;
+    `;
+
+    overlay.innerHTML = `
+        <div style="background: white; border-radius: 20px; padding: 36px;
+                    width: 100%; max-width: 440px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+                    direction: rtl; text-align: right;">
+            <div style="text-align: center; margin-bottom: 24px;">
+                <div style="font-size: 2.5rem; margin-bottom: 8px;">🔐</div>
+                <h2 style="color: #0f766e; font-size: 1.3rem; margin: 0;">تغيير كلمة المرور الإلزامي</h2>
+                <p style="color: #64748b; font-size: 0.85rem; margin-top: 8px;">
+                    مرحباً <strong>${userObj.name}</strong>!<br>
+                    لدواعي الأمان، يجب تغيير كلمة المرور الافتراضية قبل الدخول.
+                </p>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 14px;">
+                <div>
+                    <label style="font-weight: 600; font-size: 0.9rem;">كلمة المرور الجديدة</label>
+                    <input type="password" id="new-pass-1" placeholder="أدخل كلمة المرور الجديدة"
+                        style="width: 100%; margin-top: 6px; padding: 12px 16px; border-radius: 8px;
+                               border: 1px solid #e2e8f0; font-family: inherit; font-size: 0.95rem; box-sizing: border-box;">
+                </div>
+                <div>
+                    <label style="font-weight: 600; font-size: 0.9rem;">تأكيد كلمة المرور</label>
+                    <input type="password" id="new-pass-2" placeholder="أعد إدخال كلمة المرور"
+                        style="width: 100%; margin-top: 6px; padding: 12px 16px; border-radius: 8px;
+                               border: 1px solid #e2e8f0; font-family: inherit; font-size: 0.95rem; box-sizing: border-box;">
+                </div>
+                <div id="pwd-change-error" style="color: #ef4444; font-size: 0.85rem; font-weight: bold; display: none; text-align: center;"></div>
+                <button id="btn-confirm-pwd" style="
+                    background-color: #10b981; color: white; border: none; padding: 14px;
+                    border-radius: 8px; font-family: inherit; font-size: 1rem; font-weight: 700;
+                    cursor: pointer; margin-top: 4px;
+                ">حفظ كلمة المرور والدخول للنظام</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    document.getElementById('btn-confirm-pwd').addEventListener('click', () => {
+        const p1 = document.getElementById('new-pass-1').value;
+        const p2 = document.getElementById('new-pass-2').value;
+        const errEl = document.getElementById('pwd-change-error');
+
+        if (!p1 || p1.length < 6) {
+            errEl.style.display = 'block';
+            errEl.textContent = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل.';
+            return;
+        }
+        if (p1 !== p2) {
+            errEl.style.display = 'block';
+            errEl.textContent = 'كلمتا المرور غير متطابقتين. يرجى التحقق.';
+            return;
+        }
+
+        // Save for built-in admin via ADMINS key
+        userObj.pass = p1;
+        userObj.firstLoginDone = true;
+        const adminKey = Object.keys(ADMINS).find(k => ADMINS[k].email.toLowerCase() === userObj.email.toLowerCase());
+        if (adminKey) {
+            localStorage.setItem(`cems_admin_pass_${adminKey}`, p1);
+            localStorage.setItem(`cems_admin_firstlogin_${adminKey}`, 'done');
+        }
+
+        overlay.remove();
+        onSuccess();
+    });
+}
+
+
+function showLoginError(msg) {
+    loginErrorMsg.style.display = "block";
+    loginErrorMsg.textContent = msg;
+}
+
+function doLogin(userObj) {
+    state.currentUser = userObj;
+    loginPortal.style.display = "none";
+    appContainer.style.display = "flex";
+
+    // Setup Topbar / Profile card
+    adminName.textContent = userObj.name;
+    adminRole.textContent = userObj.role;
+    adminAvatar.textContent = userObj.name.charAt(0);
+
+    // Show email if available
+    const emailEl = document.getElementById("sidebar-admin-email");
+    if (emailEl && userObj.email) {
+        emailEl.textContent = "✉ " + userObj.email;
+    }
+
+    // Fill printable fields with logged admin
+    document.getElementById("p-receipt-admin").textContent = userObj.name;
+    document.getElementById("r-admin").textContent = userObj.name;
+
+    // Auto-fill the expense authorized field with current admin name
+    const expAuthField = document.getElementById("exp-authorized");
+    if (expAuthField) expAuthField.value = userObj.name;
+
+    // Show User Management tab only for master admin
+    const isMaster = userObj.email && userObj.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
+    const navMgmt = document.getElementById("nav-usermgmt");
+    if (navMgmt) navMgmt.style.display = isMaster ? "flex" : "none";
+
+    // Show pending badge count
+    if (isMaster) updatePendingBadge();
+
+    // Show initial tab
+    if (state.members.length > 0) {
+        switchTab("dashboard-tab");
+    } else {
+        switchTab("upload-tab");
+    }
+}
+
+
+// Log out
+document.getElementById("btn-logout").addEventListener("click", () => {
+    localStorage.removeItem("cems_logged_email");
+    state.currentUser = null;
+    loginPortal.style.display = "flex";
+    appContainer.style.display = "none";
+    loginPassInput.value = "";
+    if (loginEmailInput) loginEmailInput.value = "";
+    loginErrorMsg.style.display = "none";
+    // Reset panels
+    document.getElementById("panel-login").style.display = "block";
+    document.getElementById("panel-register").style.display = "none";
+});
+
+// File Upload Drag and Drop
+dropZone.addEventListener("click", () => btnFileSelect.click());
+dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = "var(--secondary)";
+    dropZone.style.backgroundColor = "#d1fae5";
+});
+dropZone.addEventListener("dragleave", () => {
+    dropZone.style.borderColor = "var(--primary)";
+    dropZone.style.backgroundColor = "var(--primary-light)";
+});
+dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = "var(--primary)";
+    dropZone.style.backgroundColor = "var(--primary-light)";
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        handleExcelFile(files[0]);
+    }
+});
+btnFileSelect.addEventListener("change", (e) => {
+    const files = e.target.files;
+    if (files.length > 0) {
+        handleExcelFile(files[0]);
+    }
+});
+
+function handleExcelFile(file) {
+    uploadStatus.textContent = "جاري معالجة وتدقيق ملف Excel...";
+    uploadStatus.style.color = "var(--accent)";
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            state.originalWorkbook = workbook;
+
+            // Process sheets
+            processWorkbook(workbook);
+
+            uploadStatus.innerHTML = `<strong>✅ تم تحميل الملف "${file.name}" بنجاح!</strong><br>تم استخراج البيانات وحفظها في المتصفح بشكل دائم — لن تحتاج لإعادة رفعه مجدداً.`;
+            uploadStatus.style.color = "var(--success)";
+
+            // Save filename only (we do NOT save the huge raw binary to prevent storage crashes/freezes)
+            try {
+                localStorage.setItem("cems_excel_filename", file.name);
+                // Clean up any old binary to free space
+                localStorage.removeItem("cems_excel_binary");
+            } catch (storageErr) {
+                console.warn("Could not store Excel filename:", storageErr);
+            }
+
+            // Save JSON data as well
+            saveToLocalMemory();
+
+            // Direct transfer to dashboard
+            setTimeout(() => {
+                switchTab("dashboard-tab");
+            }, 1200);
+
+        } catch (err) {
+            console.error(err);
+            uploadStatus.textContent = "فشلت قراءة الملف المالي: " + err.message;
+            uploadStatus.style.color = "var(--danger)";
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+// Helper: convert ArrayBuffer to Base64 string
+function arrayBufferToBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+}
+
+// Helper: convert Base64 back to Uint8Array
+function base64ToUint8Array(base64) {
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+}
+
+// Helper: Find sheet header row index dynamically to handle custom formatting or padding rows
+function findHeaderRow(sheet, keywords) {
+    if (!sheet || !sheet['!ref']) return 0;
+    const range = XLSX.utils.decode_range(sheet['!ref']);
+    const maxSearchRows = Math.min(range.e.r, range.s.r + 15); // check first 15 rows
+    for (let r = range.s.r; r <= maxSearchRows; r++) {
+        let matchCount = 0;
+        for (let c = range.s.c; c <= range.e.c; c++) {
+            const cellRef = XLSX.utils.encode_cell({ r: r, c: c });
+            const cell = sheet[cellRef];
+            if (cell && cell.v) {
+                const val = String(cell.v).trim();
+                if (keywords.some(k => val.toLowerCase() === k.toLowerCase() || val.includes(k))) {
+                    matchCount++;
+                }
+            }
+        }
+        if (matchCount >= 2) {
+            return r;
+        }
+    }
+    // Fallback: search for single key name
+    for (let r = range.s.r; r <= maxSearchRows; r++) {
+        for (let c = range.s.c; c <= range.e.c; c++) {
+            const cellRef = XLSX.utils.encode_cell({ r: r, c: c });
+            const cell = sheet[cellRef];
+            if (cell && cell.v) {
+                const val = String(cell.v).trim();
+                if (val.includes("الاسم") || val.includes("رب العائلة") || val.includes("اسم رب العائلة")) {
+                    return r;
+                }
+            }
+        }
+    }
+    return 0; // fallback to row index 0
+}
+
+// Convert Excel Data into active state
+function processWorkbook(workbook) {
+    const sheetNames = workbook.SheetNames;
+    console.log('Sheet names in workbook:', sheetNames);
+
+    // 1. Process "التحصيل الشهري" — individual member monthly payments
+    const parsedMembers = [];
+    const monthlySheet = workbook.Sheets["التحصيل الشهري"];
+    if (monthlySheet) {
+        // Dynamically find correct header row index to skip title rows (failsafe range: 3 fallback)
+        const headerRow = findHeaderRow(monthlySheet, ["الرقم", "الاسم", "رب العائلة", "المجموع"]);
+        console.log("Found monthly ledger header row at index:", headerRow);
+        const json = XLSX.utils.sheet_to_json(monthlySheet, { range: headerRow, defval: 0 });
+
+        json.forEach((row, i) => {
+            const name = row["الاسم"] || row["اسم العضو"] || row["الاسم كامل"] || "";
+            if (!name || name === 0) return; // skip empty rows
+
+            const member = {
+                id: row["الرقم"] || row["رقم"] || (i + 1),
+                name: String(name),
+                parent: String(row["رب العائلة"] || row["رب عائلة"] || row["المشرف"] || ""),
+                payments: {},
+                sum: 0
+            };
+
+            state.monthsList.forEach(m => {
+                const parsedVal = Number(row[m.key] || row[m.key.trim()] || 0);
+                const val = isNaN(parsedVal) ? 0 : parsedVal;
+                member.payments[m.key] = val;
+                member.sum += val;
+            });
+
+            parsedMembers.push(member);
+        });
+        state.members = parsedMembers;
+    }
+
+    // 2. Process "وصولات العائلات" — the primary family receipts sheet
+    // Real columns (confirmed from file):
+    // رقم العائلة | اسم رب العائلة | عدد الأفراد | الاشتراك الشهري (₪) | إجمالي المدفوع (₪) | أفراد العائلة
+    const parsedFamilies = [];
+
+    // Try all known sheet name variations
+    const familySheetName = ["وصولات العائلات", "وصل الدفع", "وصولات الدفع", "وصولات"].find(n => workbook.Sheets[n]);
+
+    if (familySheetName) {
+        const sheet = workbook.Sheets[familySheetName];
+        // Dynamically find correct header row index to skip title rows (failsafe range: 3 fallback)
+        const headerRow = findHeaderRow(sheet, ["رقم العائلة", "معرف العائلة", "اسم رب العائلة", "رب العائلة", "عدد الأفراد"]);
+        console.log("Found family registry header row at index:", headerRow);
+        const json = XLSX.utils.sheet_to_json(sheet, { range: headerRow, defval: "" });
+
+        json.forEach((row, i) => {
+            // Head name — try various column name spellings
+            const headName = String(
+                row["اسم رب العائلة"] || row["رب العائلة"] || row["اسم العائلة"] || row["الرأس"] ||
+                row["اسم رب الاسره"] || row["اسم رب الاسرة"] || ""
+            ).trim();
+            if (!headName) return;
+
+            // Members list — stored as comma-separated string in Excel
+            const membersCellRaw = String(
+                row["أفراد العائلة"] || row["افراد العائله"] || row["قائمه افراد العائله"] ||
+                row["الأفراد التفصيلي"] || row["الأفراد"] || ""
+            ).trim();
+
+            // Parse the members list — split by Arabic comma or comma
+            const membersArr = membersCellRaw
+                ? membersCellRaw.split(/،|,/).map(m => m.trim()).filter(m => m)
+                : [headName];
+
+            // Monthly subscription amount (₪ symbol stripped)
+            const subRaw = String(row["الاشتراك الشهري (₪)"] || row["الاشتراك الشهري"] || row["الاشتراك المفترض (شيكل/شري)"] || row["الاشتراك"] || 0);
+            const subscription = parseInt(subRaw.replace(/[^\d]/g, '')) || (membersArr.length * 10);
+
+            // Total paid
+            const paidRaw = String(row["إجمالي المدفوع (₪)"] || row["إجمالي المدفوع"] || row["إجمالي المسدد"] || row["المسدد"] || 0);
+            const totalPaid = parseInt(paidRaw.replace(/[^\d]/g, '')) || 0;
+
+            parsedFamilies.push({
+                familyId: row["رقم العائلة"] || row["معرف العائلة"] || row["رقم"] || (i + 1),
+                headName: headName,
+                memberCount: parseInt(String(row["عدد الأفراد"] || row["عدد أفراد الأسرة"] || membersArr.length)) || membersArr.length,
+                subscription: subscription,
+                totalPaid: totalPaid,
+                membersList: membersArr.join('، '), // plain string
+                membersArr: membersArr               // array for receipt rendering
+            });
+        });
+        state.families = parsedFamilies;
+    } else {
+        // Fallback: group dynamically from التحصيل الشهري if no receipts sheet
+        const grouped = {};
+        state.members.forEach(m => {
+            const familyName = m.parent || m.name;
+            if (!grouped[familyName]) {
+                grouped[familyName] = { members: [], totalPaid: 0 };
+            }
+            grouped[familyName].members.push(m.name);
+            grouped[familyName].totalPaid += m.sum;
+        });
+
+        Object.keys(grouped).forEach((headName, index) => {
+            const mCount = grouped[headName].members.length;
+            parsedFamilies.push({
+                familyId: index + 1,
+                headName: headName,
+                memberCount: mCount,
+                subscription: mCount * 10,
+                totalPaid: grouped[headName].totalPaid,
+                membersList: grouped[headName].members.join('، '),
+                membersArr: grouped[headName].members
+            });
+        });
+        state.families = parsedFamilies;
+    }
+}
+
+// Local Storage Sync (with safety error handling for browser storage limit)
+function saveToLocalMemory() {
+    try {
+        localStorage.setItem("cems_data_members", JSON.stringify(state.members));
+        localStorage.setItem("cems_data_families", JSON.stringify(state.families));
+        localStorage.setItem("cems_data_months", JSON.stringify(state.monthsList));
+        localStorage.setItem("cems_data_expenses", JSON.stringify(state.expenses));
+        localStorage.setItem("cems_selected_ledger_months", JSON.stringify(state.selectedLedgerMonths || []));
+    } catch (err) {
+        console.error("Storage error:", err);
+        if (err.name === "QuotaExceededError" || err.code === 22) {
+            alert("⚠️ تنبيه: مساحة التخزين في المتصفح ممتلئة! يرجى إزالة المرفقات الكبيرة أو تنظيف سجل الصرف للمتابعة دون فقدان البيانات.");
+        }
+    }
+}
+
+function loadCachedData() {
+    // Load months list cache first
+    const cachedMonths = localStorage.getItem("cems_data_months");
+    if (cachedMonths) {
+        state.monthsList = JSON.parse(cachedMonths);
+    } else {
+        state.monthsList = JSON.parse(JSON.stringify(DEFAULT_MONTHS));
+    }
+
+    // Initialize/load selected Ledger months
+    const cachedSelected = localStorage.getItem("cems_selected_ledger_months");
+    if (cachedSelected) {
+        try {
+            state.selectedLedgerMonths = JSON.parse(cachedSelected);
+        } catch(e) {
+            state.selectedLedgerMonths = state.monthsList.map(m => m.key);
+        }
+    } else {
+        // By default, select all months
+        state.selectedLedgerMonths = state.monthsList.map(m => m.key);
+    }
+
+    // Load expenses
+    const cachedExpenses = localStorage.getItem("cems_data_expenses");
+    state.expenses = cachedExpenses ? JSON.parse(cachedExpenses) : [];
+    
+    // Ensure all expenses have valid IDs to enable working Delete options
+    let idUpdated = false;
+    state.expenses.forEach((e, idx) => {
+        if (!e.id) {
+            e.id = "exp_" + Date.now() + "_" + idx;
+            idUpdated = true;
+        }
+    });
+    if (idUpdated) {
+        saveToLocalMemory();
+    }
+
+    // Load JSON dataset directly (very fast, no freeze)
+    const cachedMembers = localStorage.getItem("cems_data_members");
+    const cachedFamilies = localStorage.getItem("cems_data_families");
+    const cachedFilename = localStorage.getItem("cems_excel_filename");
+
+    // Clean up large raw Excel binary if it exists to free up localStorage space
+    if (localStorage.getItem("cems_excel_binary")) {
+        localStorage.removeItem("cems_excel_binary");
+    }
+
+    if (cachedMembers && cachedFamilies) {
+        state.members = JSON.parse(cachedMembers);
+        state.families = JSON.parse(cachedFamilies);
+        
+        // Update upload status info
+        const statusEl = document.getElementById("upload-status");
+        if (statusEl) {
+            statusEl.innerHTML = `<strong>✅ البيانات محملة من الذاكرة الدائمة</strong><br>آخر ملف: "${cachedFilename || 'احصاء ال اطفيحه'}". يمكنك رفع ملف جديد لتحديث البيانات.`;
+            statusEl.style.color = "var(--success)";
+        }
+        updateIndicators();
+    } else {
+        // No local cache yet, load the hardcoded default database seed
+        state.members = JSON.parse(JSON.stringify(DEFAULT_MEMBERS));
+        state.families = JSON.parse(JSON.stringify(DEFAULT_FAMILIES));
+        
+        // Save it so that localStorage has baseline values
+        saveToLocalMemory();
+        updateIndicators();
+        
+        const statusEl = document.getElementById("upload-status");
+        if (statusEl) {
+            statusEl.innerHTML = `<strong>✅ تم تحميل كشف الأسماء الافتراضي تلقائياً بالتطبيق</strong><br>البيانات مضمنة وجاهزة للعمل والتعديل مباشرة دون حاجة لرفع Excel.`;
+            statusEl.style.color = "var(--success)";
+        }
+    }
+}
+
+// Clear browser cache
+document.getElementById("btn-clear-cache").addEventListener("click", () => {
+    if (confirm("هل أنت متأكد من رغبتك في مسح كافة التعديلات الحالية وإعادة تعيين كشف الصندوق إلى البيانات الافتراضية؟")) {
+        localStorage.removeItem("cems_data_members");
+        localStorage.removeItem("cems_data_families");
+        localStorage.removeItem("cems_data_months");
+        localStorage.removeItem("cems_data_expenses");
+        localStorage.removeItem("cems_excel_binary");
+        localStorage.removeItem("cems_excel_filename");
+        
+        // Reload default data
+        state.monthsList = JSON.parse(JSON.stringify(DEFAULT_MONTHS));
+        state.members = JSON.parse(JSON.stringify(DEFAULT_MEMBERS));
+        state.families = JSON.parse(JSON.stringify(DEFAULT_FAMILIES));
+        state.expenses = [];
+        state.originalWorkbook = null;
+        
+        saveToLocalMemory();
+        updateIndicators();
+        
+        uploadStatus.textContent = "تمت إعادة تعيين كشف الصندوق إلى الأسماء الافتراضية بنجاح ونظيفة.";
+        uploadStatus.style.color = "var(--success)";
+        
+        // Refresh tables/views
+        populateMonthFilters();
+        populateAddMemberFamilies();
+        populateReceiptFamilies();
+        
+        renderDashboard();
+        renderLedgerTable();
+        renderFamiliesTable();
+        
+        alert("تمت إعادة تعيين كشف الصندوق للبيانات الافتراضية بنجاح.");
+    }
+});
+
+// Update KPIs and details
+function updateIndicators() {
+    // Always update the sidebar data status badge
+    const dot = document.getElementById("sidebar-data-dot");
+    const label = document.getElementById("sidebar-data-label");
+    const statusBox = document.getElementById("sidebar-data-status");
+    
+    if (state.members.length > 0 && dot && label && statusBox) {
+        // Data is loaded — show green
+        dot.style.background = "#10b981";
+        label.textContent = `البيانات محملة (${state.members.length} فرد)`;
+        statusBox.style.backgroundColor = "rgba(16, 185, 129, 0.15)";
+        statusBox.style.border = "1px solid rgba(16, 185, 129, 0.3)";
+        statusBox.style.color = "#a7f3d0";
+    } else if (dot && label && statusBox) {
+        // No data
+        dot.style.background = "#ef4444";
+        label.textContent = "لا توجد بيانات محملة";
+        statusBox.style.backgroundColor = "rgba(239, 68, 68, 0.15)";
+        statusBox.style.border = "1px solid rgba(239, 68, 68, 0.3)";
+        statusBox.style.color = "#fca5a5";
+    }
+
+    if (state.members.length === 0) return;
+
+
+    // Total members count
+    document.getElementById("stat-total-members").textContent = state.members.length;
+
+    // Total collected
+    let totalCollected = 0;
+    state.members.forEach(m => totalCollected += m.sum);
+    document.getElementById("stat-total-collected").textContent = totalCollected + " شيكل";
+
+    // Expected Monthly subscription (each active member pays 10 shikel)
+    const monthlyExpected = state.members.length * 10;
+    document.getElementById("stat-expected-monthly").textContent = monthlyExpected + " شيكل / شهر";
+
+    // Overall Commitment Rate (families that have contribution matches)
+    let totalFamilies = state.families.length;
+    let committedFamilies = 0;
+    state.families.forEach(f => {
+        if (f.totalPaid > 0) {
+            committedFamilies++;
+        }
+    });
+
+    const rate = totalFamilies > 0 ? Math.round((committedFamilies / totalFamilies) * 100) : 0;
+    document.getElementById("stat-commitment-rate").textContent = rate + "%";
+
+    // Expenses and net balance
+    const totalExpenses = state.expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+    const netBalance = totalCollected - totalExpenses;
+    const expEl = document.getElementById("stat-total-expenses");
+    const netEl = document.getElementById("stat-net-balance");
+    if (expEl) expEl.textContent = totalExpenses + " شيكل";
+    if (netEl) {
+        netEl.textContent = netBalance + " شيكل";
+        netEl.style.color = netBalance >= 0 ? "#10b981" : "#ef4444";
+    }
+}
+
+// Render Dashboard Charts
+function renderCharts() {
+    if (state.members.length === 0) return;
+
+    // Destroy existing charts to prevent memory leak duplicates
+    if (monthlyChartInstance) monthlyChartInstance.destroy();
+    if (commitmentChartInstance) commitmentChartInstance.destroy();
+
+    // 1. Monthly Chart Collections
+    const labels = state.monthsList.map(m => m.key);
+    const dataCollected = [];
+    const dataExpected = [];
+
+    state.monthsList.forEach(m => {
+        let collectedForMonth = 0;
+        state.members.forEach(member => {
+            collectedForMonth += (member.payments[m.key] || 0);
+        });
+        dataCollected.push(collectedForMonth);
+        dataExpected.push(state.members.length * 10);
+    });
+
+    const ctx1 = document.getElementById("monthly-chart").getContext("2d");
+    monthlyChartInstance = new Chart(ctx1, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'المبلغ المحصل الفعلي (شيكل)',
+                    data: dataCollected,
+                    backgroundColor: 'rgba(16, 185, 129, 0.85)',
+                    borderColor: '#10b981',
+                    borderWidth: 1
+                },
+                {
+                    label: 'المبلغ المستهدف (10 شيكل/عضو)',
+                    data: dataExpected,
+                    type: 'line',
+                    borderColor: '#0f766e',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    borderDash: [5, 5]
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true }
+            },
+            plugins: {
+                legend: { position: 'bottom', labels: { font: { family: 'Cairo' } } }
+            }
+        }
+    });
+
+    // 2. Commitment Rate Doughnut Chart
+    let totalFamilies = state.families.length;
+    let committedFamilies = 0;
+    state.families.forEach(f => {
+        if (f.totalPaid > 0) committedFamilies++;
+    });
+    let uncommittedFamilies = totalFamilies - committedFamilies;
+
+    const ctx2 = document.getElementById("rate-pie-chart").getContext("2d");
+    commitmentChartInstance = new Chart(ctx2, {
+        type: 'doughnut',
+        data: {
+            labels: ['عائلات ملتزمة', 'عائلات متأخرة الدفع'],
+            datasets: [{
+                data: [committedFamilies, uncommittedFamilies],
+                backgroundColor: ['#10b981', '#f59e0b'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { font: { family: 'Cairo' } } }
+            }
+        }
+    });
+
+    updateIndicators();
+}
+
+// -------------------------------------------------------------
+// Interactive Monthly Ledger Table Controls & Render
+// -------------------------------------------------------------
+const ledgerSearch = document.getElementById("ledger-search");
+const ledgerFilterMonth = document.getElementById("ledger-filter-month");
+const ledgerFilterStatus = document.getElementById("ledger-filter-status");
+
+// Debounce helper to prevent freezing during fast typing
+function debounce(func, delay = 250) {
+    let timeoutId;
+    return (...args) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+            func(...args);
+        }, delay);
+    };
+}
+
+if (ledgerSearch) {
+    ledgerSearch.addEventListener("input", debounce(renderLedgerTable, 250));
+}
+if (ledgerFilterMonth) {
+    ledgerFilterMonth.addEventListener("change", (e) => {
+        const val = e.target.value;
+        const ops = document.getElementById("month-ops-controls");
+        if (ops) {
+            ops.style.display = val === "all" ? "none" : "flex";
+        }
+        renderLedgerTable();
+    });
+}
+if (ledgerFilterStatus) {
+    ledgerFilterStatus.addEventListener("change", renderLedgerTable);
+}
+
+function renderLedgerHeaders() {
+    const thead = document.getElementById("ledger-headers");
+    if (!thead) return;
+    
+    thead.innerHTML = "";
+    const tr = document.createElement("tr");
+    
+    const thId = document.createElement("th");
+    thId.textContent = "الرقم";
+    tr.appendChild(thId);
+    
+    const thName = document.createElement("th");
+    thName.textContent = "الاسم كامل";
+    tr.appendChild(thName);
+    
+    const filterMonth = ledgerFilterMonth ? ledgerFilterMonth.value : "all";
+    
+    if (filterMonth === "all") {
+        const visibleMonths = state.monthsList.filter(m => state.selectedLedgerMonths.includes(m.key));
+        visibleMonths.forEach(m => {
+            const thMonth = document.createElement("th");
+            const shortKey = m.key.replace("2026", "26").replace("2027", "27").replace("2028", "28");
+            thMonth.textContent = shortKey;
+            tr.appendChild(thMonth);
+        });
+    } else {
+        const thMonth = document.createElement("th");
+        const shortKey = filterMonth.replace("2026", "26").replace("2027", "27").replace("2028", "28");
+        thMonth.textContent = shortKey;
+        tr.appendChild(thMonth);
+    }
+    
+    const thSum = document.createElement("th");
+    thSum.textContent = "المجموع";
+    tr.appendChild(thSum);
+    
+    const thAction = document.createElement("th");
+    thAction.textContent = "إجراء";
+    thAction.style.textAlign = "center";
+    tr.appendChild(thAction);
+    
+    thead.appendChild(tr);
+}
+
+function renderLedgerTable() {
+    renderLedgerHeaders();
+
+    const tbody = document.getElementById("ledger-rows");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+
+    const filterMonth = ledgerFilterMonth ? ledgerFilterMonth.value : "all";
+    const visibleMonthsCount = filterMonth === "all" ? (state.selectedLedgerMonths || []).length : 1;
+    const colCount = 2 + visibleMonthsCount + 2;
+
+    if (state.members.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${colCount}" style="text-align: center;">يرجى رفع ملف البيانات للبدء.</td></tr>`;
+        return;
+    }
+
+    const rawSearch = ledgerSearch ? ledgerSearch.value : "";
+    const searchQuery = normalizeArabicName(rawSearch);
+    const filterStatus = ledgerFilterStatus ? ledgerFilterStatus.value : "all";
+
+    // Set scroll container layouts dynamically
+    const table = document.getElementById("table-ledger");
+    const scrollInfo = document.querySelector(".table-scroll-info");
+    if (table) {
+        if (filterMonth === "all" && visibleMonthsCount > 4) {
+            table.style.minWidth = "1200px";
+            if (scrollInfo) scrollInfo.style.display = "flex";
+        } else {
+            table.style.minWidth = "auto";
+            if (scrollInfo) scrollInfo.style.display = "none";
+        }
+    }
+
+    let filtered = state.members.filter(m => {
+        // Search matching using Arabic normalization to handle typing variations
+        const normName = normalizeArabicName(m.name);
+        const normParent = normalizeArabicName(m.parent);
+        const matchSearch = normName.includes(searchQuery) || normParent.includes(searchQuery);
+        
+        // Status & Month matching
+        let matchStatus = true;
+        if (filterMonth !== "all") {
+            const TARGET_KEY = filterMonth;
+            const paidThisMonth = (m.payments[TARGET_KEY] || 0) > 0;
+            if (filterStatus === "paid") {
+                matchStatus = paidThisMonth;
+            } else if (filterStatus === "unpaid") {
+                matchStatus = !paidThisMonth;
+            }
+        } else {
+            if (filterStatus === "paid") {
+                matchStatus = m.sum >= (state.monthsList.length * 10);
+            } else if (filterStatus === "unpaid") {
+                matchStatus = m.sum < (state.monthsList.length * 10);
+            }
+        }
+
+        return matchSearch && matchStatus;
+    });
+
+    if (filtered.length === 0) {
+         tbody.innerHTML = `<tr><td colspan="${colCount}" style="text-align: center;">لم يتم العثور على أي مدخلات تطابق معايير البحث.</td></tr>`;
+         return;
+    }
+
+    filtered.forEach(member => {
+        const tr = document.createElement("tr");
+
+        // ID & Name
+        const tdId = document.createElement("td");
+        tdId.textContent = member.id;
+        tr.appendChild(tdId);
+
+        const tdName = document.createElement("td");
+        tdName.innerHTML = `<strong>${member.name}</strong>`;
+        tr.appendChild(tdName);
+
+        // Month Payments Column(s)
+        if (filterMonth === "all") {
+            const visibleMonths = state.monthsList.filter(m => state.selectedLedgerMonths.includes(m.key));
+            visibleMonths.forEach(m => {
+                const tdMonth = document.createElement("td");
+                tdMonth.style.textAlign = "center";
+                const val = member.payments[m.key] || 0;
+
+                const chk = document.createElement("input");
+                chk.type = "checkbox";
+                chk.className = "ledger-checkbox";
+                chk.checked = val > 0;
+                
+                chk.addEventListener("change", (e) => {
+                    const isChecked = e.target.checked;
+                    const paymentVal = isChecked ? 10 : 0;
+                    
+                    member.payments[m.key] = paymentVal;
+                    
+                    let memberTotal = 0;
+                    state.monthsList.forEach(mon => {
+                        memberTotal += (member.payments[mon.key] || 0);
+                    });
+                    member.sum = memberTotal;
+                    tdSum.textContent = memberTotal + " شيكل";
+
+                    recalculateFamilyTotals(member.parent);
+                    saveToLocalMemory();
+                    renderCharts();
+                    populateMonthFilters();
+                });
+
+                tdMonth.appendChild(chk);
+                tr.appendChild(tdMonth);
+            });
+        } else {
+            const tdMonth = document.createElement("td");
+            tdMonth.style.textAlign = "center";
+            const val = member.payments[filterMonth] || 0;
+
+            const chk = document.createElement("input");
+            chk.type = "checkbox";
+            chk.className = "ledger-checkbox";
+            chk.checked = val > 0;
+            
+            chk.addEventListener("change", (e) => {
+                const isChecked = e.target.checked;
+                const paymentVal = isChecked ? 10 : 0;
+                
+                member.payments[filterMonth] = paymentVal;
+                
+                let memberTotal = 0;
+                state.monthsList.forEach(mon => {
+                    memberTotal += (member.payments[mon.key] || 0);
+                });
+                member.sum = memberTotal;
+                tdSum.textContent = memberTotal + " شيكل";
+
+                recalculateFamilyTotals(member.parent);
+                saveToLocalMemory();
+                renderCharts();
+                populateMonthFilters();
+            });
+
+            tdMonth.appendChild(chk);
+            tr.appendChild(tdMonth);
+        }
+
+        // Totals column
+        const tdSum = document.createElement("td");
+        tdSum.style.fontWeight = "bold";
+        tdSum.style.color = "var(--secondary)";
+        tdSum.textContent = member.sum + " شيكل";
+        tr.appendChild(tdSum);
+
+        // Actions column with Edit (✏️) and Delete (🗑️)
+        const tdAction = document.createElement("td");
+        tdAction.style.textAlign = "center";
+        tdAction.style.whiteSpace = "nowrap";
+        
+        // Edit Button
+        const btnEdit = document.createElement("button");
+        btnEdit.innerHTML = "✏️";
+        btnEdit.title = "تعديل العضو";
+        btnEdit.style.cssText = "background: rgba(16, 185, 129, 0.12); color: var(--primary); border: 1px solid rgba(16, 185, 129, 0.3); padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; margin-left: 6px;";
+        btnEdit.addEventListener("click", () => {
+            openEditMemberModal(member.id);
+        });
+        tdAction.appendChild(btnEdit);
+        
+        // Delete Button
+        const btnDel = document.createElement("button");
+        btnDel.innerHTML = "🗑️";
+        btnDel.title = "حذف العضو";
+        btnDel.style.cssText = "background: rgba(239, 68, 68, 0.12); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;";
+        btnDel.addEventListener("click", () => {
+            deleteMember(member.id, member.name);
+        });
+        tdAction.appendChild(btnDel);
+        
+        tr.appendChild(tdAction);
+
+        tbody.appendChild(tr);
+    });
+}
+
+function normalizeArabicName(name) {
+    if (!name) return "";
+    return String(name)
+        .trim()
+        .toLowerCase()
+        .replace(/[أإآ]/g, "ا")
+        .replace(/ة/g, "ه")
+        .replace(/ى/g, "ي")
+        .replace(/\s+/g, " ");
+}
+
+function recalculateFamilyTotals(familyName) {
+    if (!familyName) return;
+    
+    const normFamilyName = normalizeArabicName(familyName);
+    let familySum = 0;
+    state.members.forEach(m => {
+        if (normalizeArabicName(m.parent) === normFamilyName) {
+            familySum += m.sum;
+        }
+    });
+
+    // Update inside family record
+    const familyRecord = state.families.find(f => normalizeArabicName(f.headName) === normFamilyName);
+    if (familyRecord) {
+        familyRecord.totalPaid = familySum;
+    }
+}
+
+// -------------------------------------------------------------
+// Excel Re-export Logic
+// -------------------------------------------------------------
+document.getElementById("btn-export-excel").addEventListener("click", () => {
+    if (state.members.length === 0) {
+        alert("لا توجد بيانات متاحة للتصدير.");
+        return;
+    }
+
+    try {
+        // Compile ledger values back into standard worksheets
+        const newLedgerRows = state.members.map(member => {
+            const rowOutput = {
+                "الرقم": member.id,
+                "الاسم": member.name,
+                "رب العائلة": member.parent
+            };
+            state.monthsList.forEach(m => {
+                rowOutput[m.key] = member.payments[m.key] || 0;
+            });
+            rowOutput["المجموع"] = member.sum;
+            return rowOutput;
+        });
+
+        // Compile family summaries
+        const newFamilyRows = state.families.map(f => {
+            return {
+                "معرف العائلة": f.familyId,
+                "رب العائلة": f.headName,
+                "عدد أفراد الأسرة": f.memberCount,
+                "الاشتراك المفترض (شيكل/شري)": f.subscription,
+                "إجمالي المسدد": f.totalPaid,
+                "قائمه افراد العائله": f.membersList
+            };
+        });
+
+        // Create workbook instance
+        const wb = XLSX.utils.book_new();
+
+        // 1. Add Dashboard mockup values
+        const dashboardMock = [
+            ["صندوق تحصيل عائلة آل اطفيحة - لوحة المعلومات"],
+            ["إجمالي المشتركين", state.members.length],
+            ["إجمالي المبالغ التراكمية المحصلة", state.members.reduce((acc, curr) => acc + curr.sum, 0)],
+            ["مستحقات الاشتراك الشهري الإجمالي", state.members.length * 10]
+        ];
+        const wsDashboard = XLSX.utils.aoa_to_sheet(dashboardMock);
+        XLSX.utils.book_append_sheet(wb, wsDashboard, "لوحة المعلومات");
+
+        // 2. Add main ledger
+        const wsLedger = XLSX.utils.json_to_sheet(newLedgerRows);
+        XLSX.utils.book_append_sheet(wb, wsLedger, "التحصيل الشهري");
+
+        // 3. Add family summaries
+        const wsFamilies = XLSX.utils.json_to_sheet(newFamilyRows);
+        XLSX.utils.book_append_sheet(wb, wsFamilies, "وصولات العائلات");
+
+        // 4. Add expenses history
+        const newExpenseRows = state.expenses.map((e, idx) => {
+            return {
+                "الرقم": idx + 1,
+                "التاريخ": e.date,
+                "التصنيف": e.category,
+                "سبب الصرف": e.reason,
+                "المبلغ (شيكل)": e.amount,
+                "المرفق": e.attachment ? `${e.attachment.name} (مرفق)` : "لا يوجد",
+                "معتمد من": e.authorized
+            };
+        });
+        const wsExpenses = XLSX.utils.json_to_sheet(newExpenseRows);
+        XLSX.utils.book_append_sheet(wb, wsExpenses, "سجل الصرف");
+
+        // Export download buffer triggers
+        XLSX.writeFile(wb, "تحديث_احصاء_ال_اطفيحه.xlsx");
+
+    } catch (err) {
+        console.error(err);
+        alert("حدثت مشكلة أثناء محاولة تصدير ملف excel: " + err.message);
+    }
+});
+
+// -------------------------------------------------------------
+// Family Roster Table Rendering & Quick Options
+// -------------------------------------------------------------
+const familySearchInput = document.getElementById("family-search");
+if (familySearchInput) {
+    familySearchInput.addEventListener("input", debounce(renderFamiliesTable, 250));
+}
+
+function renderFamiliesTable() {
+    const tbody = document.getElementById("family-rows");
+    tbody.innerHTML = "";
+
+    if (state.families.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center;">لم يتم توثيق أي بيانات عائلات.</td></tr>`;
+        return;
+    }
+
+    const rawQuery = familySearchInput ? familySearchInput.value : "";
+    const query = normalizeArabicName(rawQuery);
+    const filtered = state.families.filter(f => normalizeArabicName(f.headName).includes(query));
+
+    filtered.forEach(family => {
+        const tr = document.createElement("tr");
+
+        tr.innerHTML = `
+            <td>${family.familyId}</td>
+            <td><strong>${family.headName}</strong></td>
+            <td>${family.memberCount} أفراد</td>
+            <td>${family.subscription} شيكل</td>
+            <td style="color: var(--secondary); font-weight: bold;">${family.totalPaid} شيكل</td>
+            <td>
+                <button class="btn btn-secondary btn-sm" onclick="configureQuickReceipt('${family.headName}')">إصدار سند قبض</button>
+            </td>
+            <td>
+                <button class="btn btn-secondary btn-sm" style="background-color: #25d366; color: white;" onclick="shareWhatsAppReceipt('${family.headName}')">واتساب</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// Trigger view switches for receipts
+window.configureQuickReceipt = function(headName) {
+    switchTab("receipt-tab");
+    
+    // Choose appropriate family in selector
+    const familySel = document.getElementById("receipt-select-family");
+    familySel.value = headName;
+    familySel.dispatchEvent(new Event("change"));
+};
+
+// WhatsApp text generator triggers
+window.shareWhatsAppReceipt = function(headName) {
+    const family = state.families.find(f => f.headName === headName);
+    if (!family) return;
+
+    // Formatting receipt message in elegant arabic format
+    const textMsg = `*صندوق تحصيل عائلة آل اطفيحة* 📜\n\nالسيد الفاضل: *${family.headName}* المحترم\nنود إعلامكم بأن إجمالي المبالغ المسددة لصندوق العائلة التراكمي قد بلغت: *${family.totalPaid} شيكل*.\nعدد أفراد العائلة المسجلين: ${family.memberCount} أفراد.\nالاشتراك المفترض شهرياً: ${family.subscription} شيكل.\n\n*شكراً لالتزامكم ودعمكم لصندوق العائلة المالي المستمر.* 🙏`;
+    
+    // Copy directly to clipboard
+    navigator.clipboard.writeText(textMsg)
+        .then(() => alert(`تم نسخ نص رسالة تفاصيل العائلة "${headName}" لعلامة الحوافظ بنجاح لتتمكن من إرسالها بالواتساب!`))
+        .catch(err => alert("عذراً، فشل نسخ النص: " + err));
+};
+
+// -------------------------------------------------------------
+// Interactive Receipt Generator Actions
+// -------------------------------------------------------------
+const receiptSelectFamily = document.getElementById("receipt-select-family");
+const receiptNo = document.getElementById("receipt-no");
+const receiptAmount = document.getElementById("receipt-amount");
+const receiptNotes = document.getElementById("receipt-notes");
+
+receiptSelectFamily.addEventListener("change", updatePrintPreview);
+receiptNo.addEventListener("input", updatePrintPreview);
+receiptAmount.addEventListener("input", updatePrintPreview);
+receiptNotes.addEventListener("input", updatePrintPreview);
+
+// Listen to checked months on receipt workspace
+document.querySelectorAll(".receipt-month-chk").forEach(chk => {
+    chk.addEventListener("change", () => {
+         // Auto-calculate receipt amount based on selected months
+         const headName = receiptSelectFamily.value;
+         const family = state.families.find(f => f.headName === headName);
+         if (family) {
+              const checkedCount = document.querySelectorAll(".receipt-month-chk:checked").length;
+              // Monthly fee = family subscription monthly
+              const expectedAmt = family.subscription * checkedCount;
+              receiptAmount.value = expectedAmt;
+         }
+         updatePrintPreview();
+    });
+});
+
+function populateReceiptFamilies() {
+    receiptSelectFamily.innerHTML = `<option value="">-- اختر رب العائلة --</option>`;
+    state.families.forEach(f => {
+        const opt = document.createElement("option");
+        opt.value = f.headName;
+        opt.textContent = `${f.headName} (${f.memberCount} أفراد)`;
+        receiptSelectFamily.appendChild(opt);
+    });
+}
+
+function updatePrintPreview() {
+    const headName = receiptSelectFamily.value;
+    const amountVal = receiptAmount.value || 0;
+    const rNo = receiptNo.value || "1001";
+    const noteText = receiptNotes.value || "لا يوجد ملاحظات إضافية.";
+
+    const family = state.families.find(f => f.headName === headName);
+    const membersRow = document.getElementById("p-receipt-members-row");
+    const membersVal = document.getElementById("p-receipt-members");
+
+    if (family && family.membersList) {
+        if (membersRow) membersRow.style.display = "flex";
+        if (membersVal) membersVal.textContent = family.membersList;
+    } else {
+        if (membersRow) membersRow.style.display = "none";
+    }
+
+    // Get checked months names
+    const checkedMonths = [];
+    document.querySelectorAll(".receipt-month-chk:checked").forEach(chk => {
+         const m = state.monthsList.find(mon => mon.id == chk.value || mon.key == chk.value);
+         if (m) checkedMonths.push(m.key);
+    });
+    const monthsStr = checkedMonths.length > 0 ? checkedMonths.join("، ") : "لم يتم تحديد شهور.";
+
+    // Fill elements
+    document.getElementById("p-receipt-no").textContent = rNo;
+    document.getElementById("p-receipt-sender").textContent = headName ? headName : "------------------------------";
+    document.getElementById("p-receipt-amount-val").textContent = amountVal;
+    document.getElementById("p-receipt-months-names").textContent = monthsStr;
+    document.getElementById("p-receipt-notes-val").textContent = noteText;
+}
+
+// Receipt text copy handler
+document.getElementById("btn-copy-receipt-txt").addEventListener("click", () => {
+    const headName = receiptSelectFamily.value;
+    if (!headName) {
+        alert("الرجاء اختيار العائلة أولاً.");
+        return;
+    }
+
+    const amountVal = receiptAmount.value || 0;
+    const rNo = receiptNo.value || "1001";
+    const family = state.families.find(f => f.headName === headName);
+    const familyMembersStr = (family && family.membersList) ? `\n*أفراد الأسرة المشمولين*: ${family.membersList}` : "";
+
+    const checkedMonths = [];
+    document.querySelectorAll(".receipt-month-chk:checked").forEach(chk => {
+         const m = state.monthsList.find(mon => mon.id == chk.value || mon.key == chk.value);
+         if (m) checkedMonths.push(m.key);
+    });
+    const monthsStr = checkedMonths.length > 0 ? checkedMonths.join("، ") : "مستحقات عامة";
+
+    const textMsg = `*تأكيد سند قبض مالي - صندوق آل اطفيحة* 🧾\n\nرقم السند: *${rNo}*\nوصلنا من السيد: *${headName}*${familyMembersStr}\nمبلغ وقدره: *${amountVal} شيكل*\nعن اشتراك شهور: *${monthsStr}*\nمستلم السند: *${state.currentUser ? state.currentUser.name : 'اللجنة المالية'}*\n\nنشكر لكم مساهمتكم الكريمة لدعم روابط العشيرة. 🕊️`;
+
+    navigator.clipboard.writeText(textMsg)
+        .then(() => alert("تم نسخ رسالة سند القبض بنجاح!"))
+        .catch(err => alert("خطأ في النسخ: " + err));
+});
+
+// Printing physical receipts triggers
+document.getElementById("btn-print-receipt").addEventListener("click", () => {
+    const headName = receiptSelectFamily.value;
+    if (!headName) {
+        alert("الرجاء اختيار العائلة دافعة المبلغ للطباعة.");
+        return;
+    }
+
+    // Clone receipt card view, copy to print only container
+    const printableArea = document.getElementById("printable-receipt-card").innerHTML;
+    const printContainer = document.getElementById("print-recipient-only");
+    
+    printContainer.innerHTML = printableArea;
+    printContainer.style.display = "block";
+
+    // Run browser print dialog
+    window.print();
+
+    printContainer.style.display = "none";
+});
+
+// Record payment from receipt generator directly
+document.getElementById("btn-save-receipt-payment").addEventListener("click", () => {
+    const headName = receiptSelectFamily.value;
+    if (!headName) {
+        alert("الرجاء اختيار العائلة أولاً.");
+        return;
+    }
+
+    const checkedChks = document.querySelectorAll(".receipt-month-chk:checked");
+    if (checkedChks.length === 0) {
+        alert("الرجاء تحديد شهر واحد على الأقل لتسجيل عملية الدفع.");
+        return;
+    }
+
+    const family = state.families.find(f => f.headName === headName);
+    if (!family) {
+        alert("خطأ: لم يتم العثور على سجل العائلة.");
+        return;
+    }
+
+    // Collect checked months keys
+    const checkedMonthsKeys = [];
+    checkedChks.forEach(chk => {
+        const m = state.monthsList.find(mon => mon.id == chk.value || mon.key == chk.value);
+        if (m) checkedMonthsKeys.push(m.key);
+    });
+
+    let updatedCount = 0;
+    state.members.forEach(m => {
+        // Matches if it's the family head himself or parent equals family head
+        const matchesFamily = (m.parent && m.parent.trim().toLowerCase() === headName.trim().toLowerCase()) 
+                            || (m.name.trim().toLowerCase() === headName.trim().toLowerCase());
+        
+        if (matchesFamily) {
+            checkedMonthsKeys.forEach(mKey => {
+                m.payments[mKey] = 10; // set 10 shikel payment
+            });
+            // Recalculate member total
+            let memberTotal = 0;
+            state.monthsList.forEach(mon => {
+                memberTotal += (m.payments[mon.key] || 0);
+            });
+            m.sum = memberTotal;
+            updatedCount++;
+        }
+    });
+
+    // Recalculate family totalPaid
+    recalculateFamilyTotals(headName);
+
+    // Save state to localStorage
+    saveToLocalMemory();
+
+    // Trigger complete dashboards and charts refresh
+    renderCharts();
+
+    // Show success dialog
+    alert(`✅ تم بنجاح تسجيل دفعة العائلة: (${headName}) لشهور: [${checkedMonthsKeys.join("، ")}]. تم تحديث حسابات (${updatedCount}) أفراد وتحديث الداشبورد والمخططات البيانية!`);
+
+    // Reset input fields
+    checkedChks.forEach(chk => chk.checked = false);
+    receiptAmount.value = 0;
+    receiptNotes.value = "";
+    
+    // Update preview with empty state
+    updatePrintPreview();
+});
+
+// -------------------------------------------------------------
+// Interactive Monthly Reports Actions
+// -------------------------------------------------------------
+const reportSelectMonth = document.getElementById("report-select-month");
+reportSelectMonth.addEventListener("change", renderMonthlyReport);
+
+function renderMonthlyReport() {
+    if (state.members.length === 0) return;
+
+    const monthVal = reportSelectMonth.value;
+    const month = state.monthsList.find(m => m.key == monthVal || m.id == monthVal);
+    if (!month) return;
+
+    const mKey = month.key;
+
+    // Fill Title
+    document.getElementById("r-title").textContent = `تقرير صندوق التحصيل الشهري - ${mKey}`;
+
+    // Fill Date & Admin dynamically
+    const todayStr = new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'numeric', day: 'numeric' });
+    document.getElementById("r-date").textContent = todayStr;
+    document.getElementById("r-admin").textContent = state.currentUser ? state.currentUser.name : "اللجنة المالية";
+
+    // Refresh digital signatures for printable report monthly sheet
+    if (window.updateSignaturesDisplay) {
+        window.updateSignaturesDisplay();
+    }
+
+    let totalExpected = 0;
+    let totalCollected = 0;
+    
+    const paidList = [];
+    const unpaidList = [];
+
+    state.members.forEach(member => {
+        totalExpected += 10;
+        const val = member.payments[mKey] || 0;
+        
+        if (val > 0) {
+            totalCollected += val;
+            paidList.push(member);
+        } else {
+            unpaidList.push(member);
+        }
+    });
+
+    const totalPending = totalExpected - totalCollected;
+    const ratePercentage = totalExpected > 0 ? Math.round((totalCollected / totalExpected) * 100) : 0;
+
+    // Set UI summary tags
+    document.getElementById("r-expected").textContent = totalExpected + " شيكل";
+    document.getElementById("r-collected").textContent = totalCollected + " شيكل";
+    document.getElementById("r-pending").textContent = totalPending + " شيكل";
+    document.getElementById("r-rate").textContent = ratePercentage + "%";
+
+    document.getElementById("r-paid-count").textContent = paidList.length;
+    document.getElementById("r-unpaid-count").textContent = unpaidList.length;
+
+    // Render lists tables
+    const tbodyPaid = document.getElementById("r-rows-paid");
+    tbodyPaid.innerHTML = "";
+    if(paidList.length === 0) {
+        tbodyPaid.innerHTML = `<tr><td colspan="4" style="text-align: center;">لا مسددين بعد في هذا الشهر.</td></tr>`;
+    } else {
+        paidList.forEach((m, idx) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${idx + 1}</td>
+                <td><strong>${m.name}</strong></td>
+                <td>${m.parent || "-"}</td>
+                <td style="color: var(--success); font-weight: bold;">+10 شيكل</td>
+            `;
+            tbodyPaid.appendChild(tr);
+        });
+    }
+
+    const tbodyUnpaid = document.getElementById("r-rows-unpaid");
+    tbodyUnpaid.innerHTML = "";
+    if (unpaidList.length === 0) {
+        tbodyUnpaid.innerHTML = `<tr><td colspan="4" style="text-align: center;">كل أفراد العائلة مسددين بالكامل لهذا الشهر.</td></tr>`;
+    } else {
+        unpaidList.forEach((m, idx) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${idx + 1}</td>
+                <td><strong>${m.name}</strong></td>
+                <td>${m.parent || "-"}</td>
+                <td style="color: var(--danger); font-weight: bold;">10 شيكل</td>
+            `;
+            tbodyUnpaid.appendChild(tr);
+        });
+    }
+
+    // --- Render monthly expenses in the report ---
+    // Match expenses whose date falls within the selected month+year
+    const monthExpenses = state.expenses.filter(e => {
+        if (!e.date) return false;
+        const parts = e.date.split('-');
+        if (parts.length < 3) return false;
+        const expYear = parseInt(parts[0]);
+        const expMonth = parseInt(parts[1]);
+        const yearMatch = month.key.match(/\d{4}/);
+        const targetYear = yearMatch ? parseInt(yearMatch[0]) : null;
+        return expMonth === month.id && (targetYear ? expYear === targetYear : true);
+    });
+
+    const rExpSection = document.getElementById("r-expenses-section");
+    const rExpRows = document.getElementById("r-exp-rows");
+    const rExpCount = document.getElementById("r-exp-count");
+    const rExpTotal = document.getElementById("r-exp-total");
+
+    if (rExpSection && rExpRows) {
+        if (monthExpenses.length > 0) {
+            rExpSection.style.display = "block";
+            rExpRows.innerHTML = "";
+            let expSum = 0;
+            monthExpenses.forEach((e, idx) => {
+                expSum += e.amount;
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td style="padding:5px 10px;">${idx + 1}</td>
+                    <td style="padding:5px 10px;">${e.date}</td>
+                    <td style="padding:5px 10px;">${e.reason}</td>
+                    <td style="padding:5px 10px;">${e.category}</td>
+                    <td style="padding:5px 10px; color:#f59e0b; font-weight:700;">${e.amount} شيكل</td>
+                    <td style="padding:5px 10px;">${e.authorized}</td>
+                `;
+                rExpRows.appendChild(tr);
+            });
+            if (rExpCount) rExpCount.textContent = monthExpenses.length;
+            if (rExpTotal) rExpTotal.textContent = expSum;
+        } else {
+            rExpSection.style.display = "none";
+        }
+    }
+}
+
+// Print Monthly Reports sheet
+document.getElementById("btn-print-report").addEventListener("click", () => {
+    if (state.members.length === 0) {
+        alert("لا توجد بيانات كافية لطباعة التقرير.");
+        return;
+    }
+    
+    // Hide components on page to leave only report container card for print dialog
+    window.print();
+});
+
+// -------------------------------------------------------------
+// Dynamic Month and Member Addition Logic
+// -------------------------------------------------------------
+function populateMonthFilters() {
+    const filterSelect = document.getElementById("ledger-filter-month");
+    const reportSelect = document.getElementById("report-select-month");
+    const receiptMonthsContainer = document.getElementById("receipt-months-container");
+    
+    // 1. Populate Ledger Month Filter (hidden select state)
+    if (filterSelect) {
+        const prevVal = filterSelect.value;
+        filterSelect.innerHTML = `<option value="all">كل الشهور</option>`;
+        state.monthsList.forEach(m => {
+            const opt = document.createElement("option");
+            opt.value = m.key;
+            opt.textContent = m.key;
+            filterSelect.appendChild(opt);
+        });
+        if (prevVal && [...filterSelect.options].some(o => o.value === prevVal)) {
+            filterSelect.value = prevVal;
+        }
+    }
+    
+    // 2. Populate Reports Month Select
+    if (reportSelect) {
+        const prevVal = reportSelect.value;
+        reportSelect.innerHTML = "";
+        state.monthsList.forEach(m => {
+            const opt = document.createElement("option");
+            opt.value = m.key;
+            opt.textContent = m.key;
+            reportSelect.appendChild(opt);
+        });
+        if (prevVal && [...reportSelect.options].some(o => o.value === prevVal)) {
+            reportSelect.value = prevVal;
+        } else if (state.monthsList.length > 0) {
+            reportSelect.value = state.monthsList[0].key;
+        }
+    }
+    
+    // 3. Populate Receipt Form Checkbox grid
+    if (receiptMonthsContainer) {
+        receiptMonthsContainer.innerHTML = "";
+        state.monthsList.forEach(m => {
+            const shortKey = m.key.replace("2026", "26").replace("2027", "27").replace("2028", "28");
+            const label = document.createElement("label");
+            label.style.display = "flex";
+            label.style.alignItems = "center";
+            label.style.gap = "6px";
+            label.style.fontSize = "0.85rem";
+            label.style.cursor = "pointer";
+            
+            const chk = document.createElement("input");
+            chk.type = "checkbox";
+            chk.className = "receipt-month-chk";
+            chk.value = m.key;
+            
+            // Re-bind the change listener
+            chk.addEventListener("change", () => {
+                 const headName = receiptSelectFamily.value;
+                 const family = state.families.find(f => f.headName === headName);
+                 if (family) {
+                      const checkedCount = receiptMonthsContainer.querySelectorAll(".receipt-month-chk:checked").length;
+                      const expectedAmt = family.subscription * checkedCount;
+                      receiptAmount.value = expectedAmt;
+                 }
+                 updatePrintPreview();
+            });
+            
+            label.appendChild(chk);
+            label.appendChild(document.createTextNode(shortKey));
+            receiptMonthsContainer.appendChild(label);
+        });
+    }
+
+    // 4. Populate and Render Interactive Horizontal Month Tabs
+    const tabsContainer = document.getElementById("ledger-month-tabs");
+    const curActive = filterSelect ? filterSelect.value : "all";
+
+    if (tabsContainer) {
+        tabsContainer.innerHTML = "";
+
+        // A. General "All Months" Tab (Comprehensive)
+        const allTab = document.createElement("div");
+        allTab.className = "month-tab";
+        if (curActive === "all") allTab.classList.add("active");
+        allTab.innerHTML = `📋 التقرير الشامل <span style="font-size:0.72rem; opacity:0.8;">(شهور متعددة)</span>`;
+        allTab.addEventListener("click", () => {
+            if (filterSelect) {
+                filterSelect.value = "all";
+                filterSelect.dispatchEvent(new Event("change"));
+            }
+            populateMonthFilters();
+        });
+        tabsContainer.appendChild(allTab);
+
+        // B. Month-by-month Tabs (Check for 100% collect completeness to style green)
+        state.monthsList.forEach(m => {
+            const tab = document.createElement("div");
+            tab.className = "month-tab";
+            if (curActive === m.key) tab.classList.add("active");
+
+            // Calculate paid statistics for this month
+            const totalM = state.members.length;
+            let paidM = 0;
+            state.members.forEach(member => {
+                if ((member.payments[m.key] || 0) > 0) {
+                    paidM++;
+                }
+            });
+
+            const collectionPercentage = totalM > 0 ? Math.round((paidM / totalM) * 100) : 0;
+            const shortKey = m.key.replace("2026", "26").replace("2027", "27").replace("2028", "28");
+
+            if (collectionPercentage === 100 && totalM > 0) {
+                tab.classList.add("completed");
+                tab.innerHTML = `✨ ${shortKey} <span style="font-size: 0.72rem; font-weight: 800; background: rgba(255,255,255,0.45); padding: 1.5px 6px; border-radius: 30px;">✓ اكتمل 100%</span>`;
+            } else {
+                tab.innerHTML = `📅 ${shortKey} <span style="font-size: 0.72rem; font-weight: 600; opacity: 0.85;">(${collectionPercentage}%)</span>`;
+            }
+
+            tab.addEventListener("click", () => {
+                if (filterSelect) {
+                    filterSelect.value = m.key;
+                    filterSelect.dispatchEvent(new Event("change"));
+                }
+                populateMonthFilters();
+            });
+
+            tabsContainer.appendChild(tab);
+        });
+    }
+
+    // 5. Populate and Tweak Multi-Month Checkboxes Panel
+    const multiMonthPanel = document.getElementById("multi-month-select-panel");
+    const multiMonthContainer = document.getElementById("multi-month-checkboxes");
+    
+    if (multiMonthPanel) {
+        if (curActive === "all") {
+            multiMonthPanel.style.display = "block";
+            
+            if (multiMonthContainer) {
+                multiMonthContainer.innerHTML = "";
+                
+                state.monthsList.forEach(m => {
+                    const label = document.createElement("label");
+                    label.className = "multi-month-chk-label";
+                    
+                    const isChecked = state.selectedLedgerMonths.includes(m.key);
+                    if (isChecked) label.classList.add("checked");
+                    
+                    const chk = document.createElement("input");
+                    chk.type = "checkbox";
+                    chk.value = m.key;
+                    chk.checked = isChecked;
+                    
+                    chk.addEventListener("change", (e) => {
+                        const activeChecked = e.target.checked;
+                        if (activeChecked) {
+                            if (!state.selectedLedgerMonths.includes(m.key)) {
+                                state.selectedLedgerMonths.push(m.key);
+                            }
+                            label.classList.add("checked");
+                        } else {
+                            state.selectedLedgerMonths = state.selectedLedgerMonths.filter(k => k !== m.key);
+                            label.classList.remove("checked");
+                        }
+                        saveToLocalMemory();
+                        renderLedgerTable();
+                    });
+                    
+                    label.appendChild(chk);
+                    
+                    // Month statistics details
+                    const totalM = state.members.length;
+                    let paidM = 0;
+                    state.members.forEach(member => {
+                        if ((member.payments[m.key] || 0) > 0) {
+                            paidM++;
+                        }
+                    });
+                    const collectionPercentage = totalM > 0 ? Math.round((paidM / totalM) * 100) : 0;
+                    const shortKey = m.key.replace("2026", "26").replace("2027", "27").replace("2028", "28");
+                    
+                    const spanText = document.createElement("span");
+                    spanText.textContent = `${shortKey} (${collectionPercentage}%)`;
+                    label.appendChild(spanText);
+                    
+                    multiMonthContainer.appendChild(label);
+                });
+            }
+        } else {
+            multiMonthPanel.style.display = "none";
+        }
+    }
+}
+
+function populateAddMemberFamilies() {
+    const selectFamily = document.getElementById("add-member-select-family");
+    if (!selectFamily) return;
+    
+    selectFamily.innerHTML = `<option value="">-- اختر رب عائلة قائم --</option>`;
+    state.families.forEach(f => {
+        const opt = document.createElement("option");
+        opt.value = f.headName;
+        opt.textContent = f.headName;
+        selectFamily.appendChild(opt);
+    });
+}
+
+// Add Member Event
+document.getElementById("btn-add-member").addEventListener("click", () => {
+    const nameInput = document.getElementById("add-member-name");
+    const selectFamily = document.getElementById("add-member-select-family");
+    const newFamilyInput = document.getElementById("add-member-new-family");
+
+    const name = nameInput.value.trim();
+    if (!name) {
+        alert("الرجاء إدخال اسم العضو الجديد.");
+        return;
+    }
+
+    // Determine family head (parent)
+    let parent = "";
+    const selectedHead = selectFamily.value;
+    const newHead = newFamilyInput.value.trim();
+
+    if (newHead) {
+        parent = newHead;
+    } else if (selectedHead) {
+        parent = selectedHead;
+    } else {
+        alert("الرجاء اختيار رب عائلة من القائمة أو كتابة اسم رب عائلة جديد.");
+        return;
+    }
+
+    // Check if member already exists
+    const exists = state.members.some(m => m.name.trim().toLowerCase() === name.toLowerCase());
+    if (exists) {
+        alert("هذا العضو مسجل بالفعل في القائمة.");
+        return;
+    }
+
+    // Generate new member ID
+    const newId = state.members.length > 0 ? Math.max(...state.members.map(m => m.id)) + 1 : 1;
+
+    // Initialize payments
+    const payments = {};
+    state.monthsList.forEach(m => {
+        payments[m.key] = 0;
+    });
+
+    const newMember = {
+        id: newId,
+        name: name,
+        parent: parent,
+        payments: payments,
+        sum: 0
+    };
+
+    // Add member to state
+    state.members.push(newMember);
+
+    // Sync state.families
+    let family = state.families.find(f => f.headName.trim().toLowerCase() === parent.toLowerCase());
+    if (family) {
+        // Increment existing family count and sub
+        family.memberCount += 1;
+        family.subscription += 10;
+        if (!family.membersArr) family.membersArr = [];
+        family.membersArr.push(name);
+        family.membersList = family.membersArr.join("، ");
+    } else {
+        // Create new family
+        const newFamId = state.families.length > 0 ? Math.max(...state.families.map(f => f.familyId)) + 1 : 1;
+        const newFamily = {
+            familyId: newFamId,
+            headName: parent,
+            memberCount: 1,
+            subscription: 10,
+            totalPaid: 0,
+            membersList: name,
+            membersArr: [name]
+        };
+        state.families.push(newFamily);
+    }
+
+    // Persist
+    saveToLocalMemory();
+
+    // Rerender and clean inputs
+    nameInput.value = "";
+    newFamilyInput.value = "";
+    
+    // Refresh family dropdown list in addition to other views
+    populateAddMemberFamilies();
+    populateReceiptFamilies();
+    
+    renderDashboard();
+    renderLedgerTable();
+    renderFamiliesTable();
+    
+    alert(`✅ تم إضافة العضو (${name}) بنجاح وإلحاقه بعائلة (${parent}).`);
+});
+
+// Add Month Event
+document.getElementById("btn-add-month").addEventListener("click", () => {
+    const monthNameInput = document.getElementById("add-month-name");
+    const monthIdSelect = document.getElementById("add-month-id");
+
+    const monthKey = monthNameInput.value.trim();
+    if (!monthKey) {
+        alert("الرجاء إدخال اسم الشهر والسنة (مثال: يناير 2027).");
+        return;
+    }
+
+    const monthId = parseInt(monthIdSelect.value);
+
+    // Check if month already exists
+    const exists = state.monthsList.some(mon => mon.key.trim().toLowerCase() === monthKey.toLowerCase());
+    if (exists) {
+        alert("هذا الشهر مضاف بالفعل في القائمة.");
+        return;
+    }
+
+    // Add month to state.monthsList
+    state.monthsList.push({
+        key: monthKey,
+        id: monthId
+    });
+
+    // Initialize this month's payment to 0 for all existing members
+    state.members.forEach(m => {
+        if (m.payments[monthKey] === undefined) {
+            m.payments[monthKey] = 0;
+        }
+    });
+
+    // Persist
+    saveToLocalMemory();
+
+    // Rerender and clean inputs
+    monthNameInput.value = "";
+
+    // Refresh dynamically populated month components
+    populateMonthFilters();
+    renderDashboard();
+    renderLedgerTable();
+    renderFamiliesTable();
+    
+    alert(`✅ تم إضافة الشهر (${monthKey}) بنجاح إلى جدول الاشتراكات والتحصيل.`);
+});
+
+// =============================================================
+// EXPENSES / EXPENDITURE MANAGEMENT MODULE
+// =============================================================
+
+// Helper: read file, compress image using HTML5 Canvas, and resolve as base64 object
+function readAttachmentFile(file) {
+    return new Promise((resolve, reject) => {
+        if (!file) {
+            resolve(null);
+            return;
+        }
+
+        const reader = new FileReader();
+
+        // 1. If image, scale dynamically to keep storage footprint small (~100kb average)
+        if (file.type.startsWith('image/')) {
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    const MAX_WIDTH = 1000;
+                    const MAX_HEIGHT = 1000;
+
+                    if (width > height) {
+                        if (width > MAX_WIDTH) {
+                            height *= MAX_WIDTH / width;
+                            width = MAX_WIDTH;
+                        }
+                    } else {
+                        if (height > MAX_HEIGHT) {
+                            width *= MAX_HEIGHT / height;
+                            height = MAX_HEIGHT;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // JPEG quality 0.70 compression
+                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.70);
+                    resolve({
+                        name: file.name,
+                        type: 'image/jpeg',
+                        size: Math.round((compressedBase64.length * 3) / 4),
+                        data: compressedBase64
+                    });
+                };
+                img.onerror = () => reject(new Error("تعذر قراءة ملف الصورة."));
+                img.src = e.target.result;
+            };
+            reader.onerror = () => reject(new Error("خطأ أثناء قراءة ملف الصورة."));
+            reader.readAsDataURL(file);
+        } else {
+            // 2. Documents (PDFs, Excel, Word etc.) read into full base64 string
+            reader.onload = function(e) {
+                resolve({
+                    name: file.name,
+                    type: file.type || 'application/octet-stream',
+                    size: file.size,
+                    data: e.target.result
+                });
+            };
+            reader.onerror = () => reject(new Error("حدث خطأ أثناء قراءة المستند."));
+            reader.readAsDataURL(file);
+        }
+    });
+}
+
+// Modal closing listener on outside click
+document.addEventListener("DOMContentLoaded", () => {
+    const modal = document.getElementById("attachment-modal");
+    if (modal) {
+        modal.addEventListener("click", (e) => {
+            if (e.target === modal) {
+                closeAttachmentModal();
+            }
+        });
+    }
+});
+
+// View Modal Renderer
+window.viewAttachment = function(expenseId) {
+    const expense = state.expenses.find(e => e.id === expenseId);
+    if (!expense || !expense.attachment) {
+        alert("المرفق غير متوفر أو تم حذفه.");
+        return;
+    }
+
+    const modal = document.getElementById("attachment-modal");
+    const title = document.getElementById("attachment-modal-title");
+    const body = document.getElementById("attachment-modal-body");
+    const downloadBtn = document.getElementById("btn-download-attachment");
+
+    if (!modal || !title || !body || !downloadBtn) return;
+
+    title.textContent = `عرض المرفق: ${expense.attachment.name}`;
+    body.innerHTML = "";
+
+    const type = expense.attachment.type;
+    const data = expense.attachment.data;
+
+    if (type.startsWith("image/")) {
+        const image = document.createElement("img");
+        image.src = data;
+        image.alt = expense.attachment.name;
+        image.style.maxWidth = "100%";
+        image.style.maxHeight = "400px";
+        image.style.borderRadius = "8px";
+        image.style.boxShadow = "var(--shadow)";
+        body.appendChild(image);
+    } else if (type === "application/pdf") {
+        const embed = document.createElement("object");
+        embed.data = data;
+        embed.type = "application/pdf";
+        embed.style.width = "100%";
+        embed.style.height = "380px";
+        
+        const fallbackText = document.createElement("div");
+        fallbackText.style.textAlign = "center";
+        fallbackText.style.padding = "20px";
+        fallbackText.innerHTML = `
+            <p style="margin-bottom:12px; color:var(--text-muted);">لا تدعم المعاينة الفورية لـ PDF في هذا المتصفح.</p>
+            <a href="${data}" download="${expense.attachment.name}" class="btn btn-primary" style="font-size:0.85rem;">📥 تحميل ملف الـ PDF مباشرة</a>
+        `;
+        embed.appendChild(fallbackText);
+        body.appendChild(embed);
+    } else {
+        const infoDiv = document.createElement("div");
+        infoDiv.style.textAlign = "center";
+        infoDiv.style.padding = "30px 20px";
+        infoDiv.innerHTML = `
+            <div style="font-size:3rem; margin-bottom:10px;">📄</div>
+            <h4 style="font-size:1.05rem; color:var(--text-main); margin-bottom:6px;">مستند خارجي: ${expense.attachment.name}</h4>
+            <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:14px;">لا تتوفر معاينة مباشرة لهذا النوع من الملفات (${type}).</p>
+            <p style="font-weight:600; color:var(--primary); font-size:0.85rem;">انقر فوق زر التحميل أدناه لحفظ المستند على جهازك.</p>
+        `;
+        body.appendChild(infoDiv);
+    }
+
+    // Download action hook
+    downloadBtn.onclick = function() {
+        const link = document.createElement("a");
+        link.href = data;
+        link.download = expense.attachment.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    modal.style.display = "flex";
+};
+
+window.closeAttachmentModal = function() {
+    const modal = document.getElementById("attachment-modal");
+    if (modal) modal.style.display = "none";
+};
+
+function renderExpensesTable() {
+    const tbody = document.getElementById("expense-rows");
+    const badge = document.getElementById("exp-total-badge");
+    if (!tbody) return;
+
+    tbody.innerHTML = "";
+
+    if (state.expenses.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted);">لا توجد أوامر صرف مسجّلة بعد.</td></tr>`;
+        if (badge) badge.textContent = "الإجمالي: 0 شيكل";
+        return;
+    }
+
+    let totalExp = 0;
+    // Show newest first
+    [...state.expenses].reverse().forEach((e, idx) => {
+        totalExp += e.amount;
+        const displayIdx = state.expenses.length - idx;
+        const tr = document.createElement("tr");
+
+        // Format Attachment preview trigger
+        const attachmentHtml = e.attachment 
+            ? `<button onclick="viewAttachment('${e.id}')" style="background:rgba(59,130,246,0.12); color:#3b82f6; border:1px solid rgba(59,130,246,0.3); padding:3px 8px; border-radius:6px; cursor:pointer; font-size:0.75rem; display:inline-flex; align-items:center; gap:4px; font-family:'Cairo', sans-serif;">📎 عرض (${e.attachment.name.length > 12 ? e.attachment.name.substring(0,8)+'...'+e.attachment.name.split('.').pop() : e.attachment.name})</button>`
+            : `<span style="color:var(--text-muted); font-size:0.8rem;">لا يوجد</span>`;
+
+        tr.innerHTML = `
+            <td>${displayIdx}</td>
+            <td>${e.date}</td>
+            <td><span style="background:rgba(245,158,11,0.12); color:#f59e0b; padding:2px 8px; border-radius:10px; font-size:0.78rem;">${e.category}</span></td>
+            <td style="max-width:200px;">${e.reason}</td>
+            <td style="font-weight:700; color:#f59e0b;">${e.amount} شيكل</td>
+            <td>${attachmentHtml}</td>
+            <td>${e.authorized}</td>
+            <td>
+                <button onclick="deleteExpense('${e.id}')" style="background:rgba(239,68,68,0.12); color:#ef4444; border:1px solid rgba(239,68,68,0.3); padding:3px 10px; border-radius:6px; cursor:pointer; font-size:0.78rem; font-family:'Cairo', sans-serif;">🗑 حذف</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    const total = state.expenses.reduce((s, e) => s + e.amount, 0);
+    if (badge) badge.textContent = `الإجمالي: ${total} شيكل`;
+}
+
+window.deleteExpense = function(id) {
+    showConfirm("هل أنت متأكد من حذف أمر الصرف هذا؟ سيتم استعادة المبلغ للرصيد الصافي.", () => {
+        state.expenses = state.expenses.filter(e => String(e.id) !== String(id));
+        saveToLocalMemory();
+        renderExpensesTable();
+        updateIndicators();
+    });
+};
+
+// Add Expense button handler
+document.getElementById("btn-add-expense").addEventListener("click", async () => {
+    const dateVal = document.getElementById("exp-date").value;
+    const amountVal = parseFloat(document.getElementById("exp-amount").value);
+    const reasonVal = document.getElementById("exp-reason").value.trim();
+    const categoryVal = document.getElementById("exp-category").value;
+    const authorizedVal = document.getElementById("exp-authorized").value.trim();
+
+    const fileInput = document.getElementById("exp-file");
+    const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+
+    if (!dateVal) {
+        alert("الرجاء تحديد تاريخ الصرف.");
+        return;
+    }
+    if (!amountVal || amountVal <= 0) {
+        alert("الرجاء إدخال مبلغ صرف صحيح أكبر من صفر.");
+        return;
+    }
+    if (!reasonVal) {
+        alert("الرجاء كتابة سبب الصرف ووصف المهمة.");
+        return;
+    }
+
+    if (file && file.size > 1.5 * 1024 * 1024) {
+        alert("⚠️ حجم الملف المرفق كبير جداً! يرجى اختيار ملفات أقل من 1.5 ميجابايت للحفاظ على كفاءة التخزين المحلي.");
+        return;
+    }
+
+    // Warn if amount exceeds net balance
+    const totalCollected = state.members.reduce((s, m) => s + m.sum, 0);
+    const totalExpenses = state.expenses.reduce((s, e) => s + e.amount, 0);
+    const netBalance = totalCollected - totalExpenses;
+    if (amountVal > netBalance) {
+        const proceed = confirm(`⚠️ تحذير: المبلغ المطلوب صرفه (${amountVal} شيكل) يتجاوز الرصيد الصافي الحالي (${netBalance} شيكل).\n\nهل تريد المتابعة رغم ذلك؟`);
+        if (!proceed) return;
+    }
+
+    let attachmentObj = null;
+    if (file) {
+        try {
+            // Show loading on the button
+            const btn = document.getElementById("btn-add-expense");
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<span style="display:inline-block; width:14px; height:14px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite; margin-left:8px; vertical-align:middle;"></span> جاري ضغط ومعالجة الملف...`;
+
+            attachmentObj = await readAttachmentFile(file);
+
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        } catch (err) {
+            alert("حدث خطأ أثناء معالجة الملف: " + err.message);
+            return;
+        }
+    }
+
+    const newExpense = {
+        id: "exp_" + Date.now(),
+        date: dateVal,
+        amount: amountVal,
+        reason: reasonVal,
+        category: categoryVal,
+        authorized: authorizedVal || (state.currentUser ? state.currentUser.name : "اللجنة المالية"),
+        attachment: attachmentObj
+    };
+
+    state.expenses.push(newExpense);
+    saveToLocalMemory();
+
+    // Clear form (keep date and authorized)
+    document.getElementById("exp-amount").value = "";
+    document.getElementById("exp-reason").value = "";
+    if (fileInput) fileInput.value = ""; // Clear file selector
+
+    renderExpensesTable();
+    updateIndicators();
+
+    alert(`✅ تم تسجيل أمر الصرف بنجاح!\nالمبلغ: ${amountVal} شيكل\nالسبب: ${reasonVal}\nالرصيد الصافي الجديد: ${netBalance - amountVal} شيكل`);
+});
+
+// Export expenses to Excel
+document.getElementById("btn-export-expenses").addEventListener("click", () => {
+    if (state.expenses.length === 0) {
+        alert("لا توجد أوامر صرف للتصدير.");
+        return;
+    }
+    const rows = state.expenses.map((e, i) => ({
+        "#": i + 1,
+        "التاريخ": e.date,
+        "التصنيف": e.category,
+        "سبب الصرف": e.reason,
+        "المبلغ (شيكل)": e.amount,
+        "المرفق": e.attachment ? `${e.attachment.name} (مرفق)` : "لا يوجد",
+        "معتمد من": e.authorized
+    }));
+    // Append totals row
+    const total = state.expenses.reduce((s, e) => s + e.amount, 0);
+    rows.push({ "#": "", "التاريخ": "", "التصنيف": "الإجمالي", "سبب الصرف": "", "المبلغ (شيكل)": total, "المرفق": "", "معتمد من": "" });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, "سجل الصرف");
+    XLSX.writeFile(wb, "سجل_الصرف_آل_اطفيحة.xlsx");
+});
+
+// Initialize expense and user management tab defaults
+document.addEventListener("DOMContentLoaded", () => {
+    // Set today as default expense date
+    const expDateInput = document.getElementById("exp-date");
+    if (expDateInput) expDateInput.value = new Date().toISOString().split("T")[0];
+
+    // Render initial (empty) table
+    renderExpensesTable();
+
+    // Initialize signature pad Canvas events
+    initSignaturePad();
+});
+
+// =============================================================
+// USER MANAGEMENT & REGISTRATION REQUESTS MODULE
+// =============================================================
+
+function updatePendingBadge() {
+    const pendingList = JSON.parse(localStorage.getItem("cems_pending_users") || "[]");
+    const badge = document.getElementById("pending-badge");
+    const label = document.getElementById("pending-count-label");
+    
+    if (badge) {
+        if (pendingList.length > 0) {
+            badge.textContent = pendingList.length;
+            badge.style.display = "flex";
+        } else {
+            badge.style.display = "none";
+        }
+    }
+    
+    if (label) {
+        label.textContent = `${pendingList.length} طلب${pendingList.length === 1 ? '' : 'ات'}`;
+    }
+}
+
+function renderPendingUsers() {
+    const tbody = document.getElementById("pending-user-rows");
+    if (!tbody) return;
+    
+    tbody.innerHTML = "";
+    const pendingList = JSON.parse(localStorage.getItem("cems_pending_users") || "[]");
+    
+    if (pendingList.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">لا توجد طلبات تسجيل معلّقة.</td></tr>`;
+        return;
+    }
+    
+    pendingList.forEach((req, idx) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${idx + 1}</td>
+            <td><strong>${req.name}</strong></td>
+            <td>${req.email}</td>
+            <td>${req.role}</td>
+            <td>${req.date || "-"}</td>
+            <td>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-primary btn-sm" onclick="approveUser('${req.email}')">✔️ موافقة</button>
+                    <button class="btn btn-danger btn-sm" onclick="rejectUser('${req.email}')">❌ رفض</button>
+                </div>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+window.approveUser = function(email) {
+    const pendingList = JSON.parse(localStorage.getItem("cems_pending_users") || "[]");
+    const userIdx = pendingList.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+    if (userIdx === -1) return;
+    
+    const user = pendingList[userIdx];
+    pendingList.splice(userIdx, 1);
+    localStorage.setItem("cems_pending_users", JSON.stringify(pendingList));
+    
+    const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
+    dynamicUsers.push({
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        pass: user.pass,
+        firstLoginDone: true,
+        isActive: true
+    });
+    
+    localStorage.setItem("cems_dynamic_users", JSON.stringify(dynamicUsers));
+    
+    alert(`✔️ تم تفعيل حساب المشرف: ${user.name} بنجاح!`);
+    updatePendingBadge();
+    renderPendingUsers();
+    renderActiveUsers();
+};
+
+window.rejectUser = function(email) {
+    const pendingList = JSON.parse(localStorage.getItem("cems_pending_users") || "[]");
+    const userIdx = pendingList.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+    if (userIdx === -1) return;
+    
+    const user = pendingList[userIdx];
+    if (confirm(`هل أنت متأكد من رفض طلب تسجيل المشرف: ${user.name}؟`)) {
+        pendingList.splice(userIdx, 1);
+        localStorage.setItem("cems_pending_users", JSON.stringify(pendingList));
+        updatePendingBadge();
+        renderPendingUsers();
+    }
+};
+
+function renderActiveUsers() {
+    const tbody = document.getElementById("active-user-rows");
+    if (!tbody) return;
+    
+    tbody.innerHTML = "";
+    let index = 1;
+    
+    Object.keys(ADMINS).forEach(key => {
+        const admin = ADMINS[key];
+        const tr = document.createElement("tr");
+        const isMaster = admin.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
+        
+        tr.innerHTML = `
+            <td>${index++}</td>
+            <td><strong>${admin.name}</strong></td>
+            <td>${admin.email}</td>
+            <td>${admin.role}</td>
+            <td><span class="badge badge-success">أساسي</span></td>
+            <td>
+                ${isMaster ? '<span style="color: var(--text-muted); font-size: 0.82rem;">وصول كامل للوحة</span>' : `
+                    <button class="btn btn-secondary btn-sm" onclick="toggleAdminStatus('${key}')">
+                        ${admin.isActive !== false ? '❌ تعطيل' : '✔️ تفعيل'}
+                    </button>
+                `}
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
+    dynamicUsers.forEach((user, idx) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${index++}</td>
+            <td><strong>${user.name}</strong></td>
+            <td>${user.email}</td>
+            <td>${user.role}</td>
+            <td><span class="badge ${user.isActive ? 'badge-success' : 'badge-danger'}">${user.isActive ? 'نشط' : 'معطل'}</span></td>
+            <td>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-secondary btn-sm" onclick="toggleDynamicUserStatus('${user.email}')">
+                        ${user.isActive ? '❌ تعطيل' : '✔️ تفعيل'}
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteDynamicUser('${user.email}')">🗑️ حذف</button>
+                </div>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    const totalCount = Object.keys(ADMINS).length + dynamicUsers.length;
+    const activeCountLabel = document.getElementById("active-users-count");
+    if (activeCountLabel) {
+        activeCountLabel.textContent = `${totalCount} مستخدم`;
+    }
+}
+
+window.toggleAdminStatus = function(key) {
+    const admin = ADMINS[key];
+    if (!admin) return;
+    
+    const currentIsActive = admin.isActive !== false;
+    const nextIsActive = !currentIsActive;
+    
+    showConfirm(`هل أنت متأكد من ${nextIsActive ? 'تفعيل' : 'تعطيل'} حساب المشرف المالي: ${admin.name}؟`, () => {
+        admin.isActive = nextIsActive;
+        localStorage.setItem(`cems_admin_active_${key}`, nextIsActive ? 'true' : 'false');
+        renderActiveUsers();
+    });
+};
+
+window.toggleDynamicUserStatus = function(email) {
+    const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
+    const userIdx = dynamicUsers.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+    if (userIdx === -1) return;
+    
+    const user = dynamicUsers[userIdx];
+    const nextIsActive = !user.isActive;
+    
+    showConfirm(`هل أنت متأكد من ${nextIsActive ? 'تفعيل' : 'تعطيل'} حساب المشرف المالي: ${user.name}؟`, () => {
+        user.isActive = nextIsActive;
+        localStorage.setItem("cems_dynamic_users", JSON.stringify(dynamicUsers));
+        renderActiveUsers();
+    });
+};
+
+window.deleteDynamicUser = function(email) {
+    const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
+    const userIdx = dynamicUsers.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+    if (userIdx === -1) return;
+    
+    const user = dynamicUsers[userIdx];
+    showConfirm(`⚠️ تحذير: هل أنت متأكد من الحذف النهائي لحساب المشرف: ${user.name}؟ لن يتمكن من تسجيل الدخول بعد الآن.`, () => {
+        dynamicUsers.splice(userIdx, 1);
+        localStorage.setItem("cems_dynamic_users", JSON.stringify(dynamicUsers));
+        alert("🗑️ تم حذف حساب المشرف بنجاح.");
+        renderActiveUsers();
+    });
+};
+
+// Direct Add Supervisor Event
+const btnAddSupervisor = document.getElementById("btn-add-supervisor");
+if (btnAddSupervisor) {
+    btnAddSupervisor.addEventListener("click", () => {
+        const name = document.getElementById("su-name").value.trim();
+        const email = document.getElementById("su-email").value.trim().toLowerCase();
+        const role = document.getElementById("su-role").value.trim();
+        const pass = document.getElementById("su-pass").value;
+
+        if (!name || !email || !role || !pass) {
+            alert("الرجاء تعبئة كافة حقول المشرف الجديد.");
+            return;
+        }
+
+        if (pass.length < 6) {
+            alert("يجب أن تكون كلمة المرور للمشرف 6 أحرف على الأقل.");
+            return;
+        }
+
+        if (findUserByEmail(email)) {
+            alert("هذا البريد الإلكتروني مسجل بالفعل لمشرف آخر.");
+            return;
+        }
+
+        const dynamicUsers = JSON.parse(localStorage.getItem("cems_dynamic_users") || "[]");
+        dynamicUsers.push({
+            name,
+            email,
+            role,
+            pass,
+            firstLoginDone: true,
+            isActive: true
+        });
+        localStorage.setItem("cems_dynamic_users", JSON.stringify(dynamicUsers));
+
+        alert(`✅ تم إضافة المشرف المالي: ${name} وتفعيل حسابه فوراً وبنجاح!`);
+        
+        document.getElementById("su-name").value = "";
+        document.getElementById("su-email").value = "";
+        document.getElementById("su-role").value = "";
+        document.getElementById("su-pass").value = "";
+
+        renderActiveUsers();
+    });
+}
+
+// -------------------------------------------------------------
+// Manual Budget Recalculation & Sync Handler
+// -------------------------------------------------------------
+function doRecalculateAll() {
+    // 1. Recalculate each member's total payments (sum)
+    state.members.forEach(member => {
+        let sum = 0;
+        state.monthsList.forEach(m => {
+            sum += (member.payments[m.key] || 0);
+        });
+        member.sum = sum;
+    });
+
+    // 2. Rebuild/recalculate families summaries to match member sums with Arabic normalization
+    state.families.forEach(f => {
+        const normHead = normalizeArabicName(f.headName);
+        let familySum = 0;
+        state.members.forEach(m => {
+            if (normalizeArabicName(m.parent) === normHead) {
+                familySum += m.sum;
+            }
+        });
+        f.totalPaid = familySum;
+    });
+
+    // 3. Save to localStorage to persist
+    saveToLocalMemory();
+
+    // 4. Update core UI displays
+    updateIndicators();
+    renderCharts();
+
+    // 5. Update active view tables
+    const activeLink = document.querySelector(".nav-link.active");
+    if (activeLink) {
+        const activeTab = activeLink.getAttribute("data-tab");
+        if (activeTab === "ledger-tab") {
+            renderLedgerTable();
+        } else if (activeTab === "families-tab") {
+            renderFamiliesTable();
+        } else if (activeTab === "receipt-tab") {
+            populateReceiptFamilies();
+        } else if (activeTab === "reports-tab") {
+            renderMonthlyReport();
+        } else if (activeTab === "expenses-tab") {
+            renderExpensesTable();
+        }
+    }
+}
+
+const btnRecalculateAll = document.getElementById("btn-recalculate-all");
+if (btnRecalculateAll) {
+    btnRecalculateAll.addEventListener("click", () => {
+        doRecalculateAll();
+        alert("✅ تم إعادة عملية فحص ومطابقة جميع الحسابات وتحديث أرقام الميزانية والمصروفات بنجاح!");
+    });
+}
+
+// -------------------------------------------------------------
+// MEMBER DELETION MODULE
+// -------------------------------------------------------------
+window.deleteMember = function(id, name) {
+    showConfirm(`هل أنت متأكد من حذف العضو (${name}) نهائياً من الصندوق؟\nسيتأثر مجموع الأسرة والتقارير المالية بهذا التغيير.`, () => {
+        const member = state.members.find(m => String(m.id) === String(id));
+        if (!member) {
+            console.error("Member to delete not found, ID was:", id);
+            return;
+        }
+        
+        const parentName = member.parent;
+        
+        // Remove from state.members
+        state.members = state.members.filter(m => String(m.id) !== String(id));
+        
+        // Update family details
+        if (parentName) {
+            const family = state.families.find(f => normalizeArabicName(f.headName) === normalizeArabicName(parentName));
+            if (family) {
+                if (family.membersArr) {
+                    family.membersArr = family.membersArr.filter(n => normalizeArabicName(n) !== normalizeArabicName(name));
+                    family.membersList = family.membersArr.join("، ");
+                    family.memberCount = family.membersArr.length;
+                    family.subscription = family.memberCount * 10;
+                } else {
+                    family.memberCount = Math.max(0, family.memberCount - 1);
+                    family.subscription = family.memberCount * 10;
+                }
+                
+                // If family has no more individuals, delete family completely
+                if (family.memberCount === 0) {
+                    state.families = state.families.filter(f => normalizeArabicName(f.headName) !== normalizeArabicName(parentName));
+                } else {
+                    recalculateFamilyTotals(parentName);
+                }
+            }
+        }
+        
+        // Persist changes
+        saveToLocalMemory();
+        
+        // Refresh all views
+        renderLedgerTable();
+        renderFamiliesTable();
+        populateAddMemberFamilies();
+        populateReceiptFamilies();
+        renderCharts();
+        
+        alert(`🗑️ تم حذف العضو (${name}) بنجاح.`);
+    });
+};
+
+// -------------------------------------------------------------
+// ELECTRONIC SIGNATURE PAD LOGIC
+// -------------------------------------------------------------
+let currentSigIndex = null;
+let isDrawing = false;
+let sigCanvas = null;
+let sigCtx = null;
+
+function initSignaturePad() {
+    sigCanvas = document.getElementById("signature-pad");
+    if (!sigCanvas) return;
+    sigCtx = sigCanvas.getContext("2d");
+    
+    // Draw styles
+    sigCtx.strokeStyle = "#0f766e"; // Teal ink
+    sigCtx.lineWidth = 3;
+    sigCtx.lineCap = "round";
+    sigCtx.lineJoin = "round";
+    
+    // Mouse Events
+    sigCanvas.addEventListener("mousedown", startDrawing);
+    sigCanvas.addEventListener("mousemove", draw);
+    sigCanvas.addEventListener("mouseup", stopDrawing);
+    sigCanvas.addEventListener("mouseout", stopDrawing);
+    
+    // Touch Events
+    sigCanvas.addEventListener("touchstart", (e) => {
+        const touch = e.touches[0];
+        const rect = sigCanvas.getBoundingClientRect();
+        const scaleX = sigCanvas.width / rect.width;
+        const scaleY = sigCanvas.height / rect.height;
+        
+        isDrawing = true;
+        sigCtx.beginPath();
+        sigCtx.moveTo((touch.clientX - rect.left) * scaleX, (touch.clientY - rect.top) * scaleY);
+        e.preventDefault();
+    });
+    sigCanvas.addEventListener("touchmove", (e) => {
+        if (!isDrawing) return;
+        const touch = e.touches[0];
+        const rect = sigCanvas.getBoundingClientRect();
+        const scaleX = sigCanvas.width / rect.width;
+        const scaleY = sigCanvas.height / rect.height;
+        
+        sigCtx.lineTo((touch.clientX - rect.left) * scaleX, (touch.clientY - rect.top) * scaleY);
+        sigCtx.stroke();
+        e.preventDefault();
+    });
+    sigCanvas.addEventListener("touchend", (e) => {
+        isDrawing = false;
+        e.preventDefault();
+    });
+    
+    document.getElementById("btn-draw-clear").addEventListener("click", () => {
+        sigCtx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+    });
+    
+    document.getElementById("btn-save-signature").addEventListener("click", saveSignature);
+}
+
+function startDrawing(e) {
+    isDrawing = true;
+    const rect = sigCanvas.getBoundingClientRect();
+    const scaleX = sigCanvas.width / rect.width;
+    const scaleY = sigCanvas.height / rect.height;
+    
+    sigCtx.beginPath();
+    sigCtx.moveTo((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY);
+}
+
+function draw(e) {
+    if (!isDrawing) return;
+    const rect = sigCanvas.getBoundingClientRect();
+    const scaleX = sigCanvas.width / rect.width;
+    const scaleY = sigCanvas.height / rect.height;
+    
+    sigCtx.lineTo((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY);
+    sigCtx.stroke();
+}
+
+function stopDrawing() {
+    isDrawing = false;
+}
+
+window.openSignatureModal = function(index) {
+    currentSigIndex = index;
+    const modal = document.getElementById("signature-modal");
+    if (modal) {
+        modal.style.display = "flex";
+        if (sigCanvas) {
+            sigCtx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+        }
+    }
+};
+
+window.closeSignatureModal = function() {
+    const modal = document.getElementById("signature-modal");
+    if (modal) {
+        modal.style.display = "none";
+    }
+};
+
+function saveSignature() {
+    if (!currentSigIndex) return;
+    
+    // Check if canvas has drawing in it
+    const blank = document.createElement("canvas");
+    blank.width = sigCanvas.width;
+    blank.height = sigCanvas.height;
+    if (sigCanvas.toDataURL() === blank.toDataURL()) {
+        alert("الرجاء رسم التوقيع أولاً قبل الحفظ.");
+        return;
+    }
+    
+    const dataUrl = sigCanvas.toDataURL();
+    
+    // Save signature under monthly key
+    const monthVal = document.getElementById("report-select-month").value;
+    const savedSigsKey = `cems_report_sigs_${monthVal}`;
+    const sigs = JSON.parse(localStorage.getItem(savedSigsKey) || "{}");
+    sigs[currentSigIndex] = dataUrl;
+    localStorage.setItem(savedSigsKey, JSON.stringify(sigs));
+    
+    window.updateSignaturesDisplay();
+    closeSignatureModal();
+}
+
+window.clearSignature = function(index) {
+    showConfirm("هل أنت متأكد من إزالة هذا التوقيع الرقمي؟", () => {
+        const monthVal = document.getElementById("report-select-month").value;
+        const savedSigsKey = `cems_report_sigs_${monthVal}`;
+        const sigs = JSON.parse(localStorage.getItem(savedSigsKey) || "{}");
+        delete sigs[index];
+        localStorage.setItem(savedSigsKey, JSON.stringify(sigs));
+        window.updateSignaturesDisplay();
+    });
+};
+
+window.updateSignaturesDisplay = function() {
+    const reportSelect = document.getElementById("report-select-month");
+    if (!reportSelect) return;
+    const monthVal = reportSelect.value;
+    const savedSigsKey = `cems_report_sigs_${monthVal}`;
+    const sigs = JSON.parse(localStorage.getItem(savedSigsKey) || "{}");
+    
+    for (let i = 1; i <= 5; i++) {
+        const area = document.getElementById(`sig-area-${i}`);
+        if (!area) continue;
+        
+        if (sigs[i]) {
+            area.innerHTML = `
+                <div style="display:flex; align-items:center; justify-content:center; gap:4px; height:45px;">
+                    <img src="${sigs[i]}" style="max-height: 42px; max-width: 100%; object-fit: contain; margin-top: 4px;" alt="توقيع">
+                    <button class="btn-sig-clear no-print" onclick="clearSignature('${i}')" title="إزالة التوقيع">❌</button>
+                </div>
+            `;
+        } else {
+            area.innerHTML = `
+                <div class="line"></div>
+                <button class="btn-sig no-print" onclick="openSignatureModal('${i}')">✍️ توقيع</button>
+            `;
+        }
+    }
+};
+
+// -------------------------------------------------------------
+// CUSTOM NON-BLOCKING CONFIRM DIALOG LOGIC
+// -------------------------------------------------------------
+window.showConfirm = function(message, callback) {
+    const modal = document.getElementById("confirm-modal");
+    const textEl = document.getElementById("confirm-modal-text");
+    const btnYes = document.getElementById("btn-confirm-yes");
+    const btnNo = document.getElementById("btn-confirm-no");
+    
+    if (!modal || !textEl || !btnYes || !btnNo) {
+        // Fallback to native confirm if elements are absent in the DOM
+        if (confirm(message)) {
+            callback();
+        }
+        return;
+    }
+    
+    textEl.textContent = message;
+    modal.style.display = "flex";
+    
+    // Clear and re-bind event listeners to avoid execution accumulation
+    const newBtnYes = btnYes.cloneNode(true);
+    const newBtnNo = btnNo.cloneNode(true);
+    btnYes.parentNode.replaceChild(newBtnYes, btnYes);
+    btnNo.parentNode.replaceChild(newBtnNo, btnNo);
+    
+    newBtnYes.addEventListener("click", () => {
+        modal.style.display = "none";
+        callback();
+    });
+    
+    newBtnNo.addEventListener("click", () => {
+        modal.style.display = "none";
+    });
+};
+
+// Smooth horizontal scroll helper for collection ledger
+window.scrollLedgerTable = function(amount) {
+    const container = document.querySelector("#ledger-tab .table-responsive");
+    if (container) {
+        container.scrollBy({ left: amount, behavior: "smooth" });
+    }
+};
+
+// -------------------------------------------------------------
+// MEMBER GENERAL EDIT MODULE
+// -------------------------------------------------------------
+window.openEditMemberModal = function(id) {
+    const member = state.members.find(m => String(m.id) === String(id));
+    if (!member) {
+        console.error("Member not found for editing. ID:", id);
+        return;
+    }
+
+    document.getElementById("edit-member-id").value = member.id;
+    document.getElementById("edit-member-name").value = member.name;
+    document.getElementById("edit-member-new-family").value = "";
+
+    // Populate family dropdown in edit modal
+    const selectFam = document.getElementById("edit-member-select-family");
+    if (selectFam) {
+        selectFam.innerHTML = `<option value="">-- اختر رب عائلة قائم --</option>`;
+        state.families.forEach(f => {
+            const opt = document.createElement("option");
+            opt.value = f.headName;
+            opt.textContent = f.headName;
+            selectFam.appendChild(opt);
+        });
+        selectFam.value = member.parent || "";
+    }
+
+    const modal = document.getElementById("edit-member-modal");
+    if (modal) modal.style.display = "flex";
+};
+
+window.closeEditMemberModal = function() {
+    const modal = document.getElementById("edit-member-modal");
+    if (modal) modal.style.display = "none";
+};
+
+// Save edited member info
+const btnSaveMemberEdit = document.getElementById("btn-save-member-edit");
+if (btnSaveMemberEdit) {
+    btnSaveMemberEdit.addEventListener("click", () => {
+        const id = document.getElementById("edit-member-id").value;
+        const newName = document.getElementById("edit-member-name").value.trim();
+        const selectedFam = document.getElementById("edit-member-select-family").value;
+        const newFamInput = document.getElementById("edit-member-new-family").value.trim();
+
+        if (!newName) {
+            alert("الرجاء إدخال اسم العضو.");
+            return;
+        }
+
+        let parent = "";
+        if (newFamInput) {
+            parent = newFamInput;
+        } else if (selectedFam) {
+            parent = selectedFam;
+        } else {
+            alert("الرجاء اختيار رب عائلة أو كتابة اسم رب عائلة جديد.");
+            return;
+        }
+
+        const member = state.members.find(m => String(m.id) === String(id));
+        if (!member) return;
+
+        const oldName = member.name;
+        const oldParent = member.parent;
+
+        // 1. Update member details
+        member.name = newName;
+        member.parent = parent;
+
+        // 2. Adjust families list
+        // Remove name from old family members registry
+        if (oldParent) {
+            const oldFamily = state.families.find(f => normalizeArabicName(f.headName) === normalizeArabicName(oldParent));
+            if (oldFamily) {
+                if (oldFamily.membersArr) {
+                    oldFamily.membersArr = oldFamily.membersArr.filter(n => normalizeArabicName(n) !== normalizeArabicName(oldName));
+                    oldFamily.membersList = oldFamily.membersArr.join("، ");
+                    oldFamily.memberCount = oldFamily.membersArr.length;
+                    oldFamily.subscription = oldFamily.memberCount * 10;
+                } else {
+                    oldFamily.memberCount = Math.max(0, oldFamily.memberCount - 1);
+                    oldFamily.subscription = oldFamily.memberCount * 10;
+                }
+                if (oldFamily.memberCount === 0) {
+                    state.families = state.families.filter(f => normalizeArabicName(f.headName) !== normalizeArabicName(oldParent));
+                } else {
+                    recalculateFamilyTotals(oldParent);
+                }
+            }
+        }
+
+        // Add name to new family register
+        let newFamily = state.families.find(f => normalizeArabicName(f.headName) === normalizeArabicName(parent));
+        if (newFamily) {
+            if (!newFamily.membersArr) newFamily.membersArr = [];
+            if (!newFamily.membersArr.some(n => normalizeArabicName(n) === normalizeArabicName(newName))) {
+                newFamily.membersArr.push(newName);
+            }
+            newFamily.membersList = newFamily.membersArr.join("، ");
+            newFamily.memberCount = newFamily.membersArr.length;
+            newFamily.subscription = newFamily.memberCount * 10;
+            recalculateFamilyTotals(parent);
+        } else {
+            // Create new family registry
+            const newFamId = state.families.length > 0 ? Math.max(...state.families.map(f => f.familyId)) + 1 : 1;
+            state.families.push({
+                familyId: newFamId,
+                headName: parent,
+                memberCount: 1,
+                subscription: 10,
+                totalPaid: 0,
+                membersList: newName,
+                membersArr: [newName]
+            });
+            recalculateFamilyTotals(parent);
+        }
+
+        // Save changes
+        saveToLocalMemory();
+
+        // Close Modal and Refresh
+        closeEditMemberModal();
+        renderLedgerTable();
+        renderFamiliesTable();
+        populateAddMemberFamilies();
+        populateReceiptFamilies();
+        renderDashboard();
+    });
+}
+
+// -------------------------------------------------------------
+// MONTH EDIT & DELETE MODULES
+// -------------------------------------------------------------
+window.openEditMonthModal = function() {
+    const monthSelect = document.getElementById("ledger-filter-month");
+    if (!monthSelect) return;
+    const oldKey = monthSelect.value;
+    if (oldKey === "all") return;
+
+    document.getElementById("edit-month-old-key").value = oldKey;
+    document.getElementById("edit-month-display-old").value = oldKey;
+    document.getElementById("edit-month-new-key").value = oldKey;
+
+    const modal = document.getElementById("edit-month-modal");
+    if (modal) modal.style.display = "flex";
+};
+
+window.closeEditMonthModal = function() {
+    const modal = document.getElementById("edit-month-modal");
+    if (modal) modal.style.display = "none";
+};
+
+const btnSaveMonthEdit = document.getElementById("btn-save-month-edit");
+if (btnSaveMonthEdit) {
+    btnSaveMonthEdit.addEventListener("click", () => {
+        const oldKey = document.getElementById("edit-month-old-key").value;
+        const newKey = document.getElementById("edit-month-new-key").value.trim();
+
+        if (!newKey) {
+            alert("الرجاء إدخال الاسم الجديد للشهر.");
+            return;
+        }
+        if (oldKey === newKey) {
+            closeEditMonthModal();
+            return;
+        }
+
+        // Check if new month key already exists
+        const exists = state.monthsList.some(m => m.key.toLowerCase() === newKey.toLowerCase());
+        if (exists) {
+            alert("هذا الاسم مسجل بالفعل لشهر آخر.");
+            return;
+        }
+
+        // Find and update month key
+        const monthObj = state.monthsList.find(m => m.key === oldKey);
+        if (!monthObj) return;
+        monthObj.key = newKey;
+
+        // Update payments key for all members
+        state.members.forEach(member => {
+            if (member.payments[oldKey] !== undefined) {
+                member.payments[newKey] = member.payments[oldKey];
+                delete member.payments[oldKey];
+            }
+        });
+
+        // Save changes
+        saveToLocalMemory();
+        closeEditMonthModal();
+
+        // Reload filters
+        populateMonthFilters();
+        
+        // Retain the newly updated month in filter select
+        const monthSelect = document.getElementById("ledger-filter-month");
+        if (monthSelect) {
+            monthSelect.value = newKey;
+        }
+
+        renderLedgerTable();
+        renderFamiliesTable();
+        populateAddMemberFamilies();
+        populateReceiptFamilies();
+        renderDashboard();
+    });
+}
+
+window.deleteMonth = function() {
+    const monthSelect = document.getElementById("ledger-filter-month");
+    if (!monthSelect) return;
+    const monthKey = monthSelect.value;
+    if (monthKey === "all") return;
+
+    showConfirm(`هل أنت متأكد من حذف شهر (${monthKey}) نهائياً من الصندوق؟\nسيتم إزالة كافة اشتراكات هذا الشهر المسجلة لجميع الأعضاء.`, () => {
+        // 1. Remove from state.monthsList
+        state.monthsList = state.monthsList.filter(m => m.key !== monthKey);
+
+        // 2. Remove the payments field from all members
+        state.members.forEach(member => {
+            delete member.payments[monthKey];
+
+            // Re-calculate member sum
+            let memberTotal = 0;
+            state.monthsList.forEach(m => {
+                memberTotal += (member.payments[m.key] || 0);
+            });
+            member.sum = memberTotal;
+        });
+
+        // 3. Re-calculate family totals
+        state.families.forEach(fam => {
+            recalculateFamilyTotals(fam.headName);
+        });
+
+        // 4. Save and reload
+        saveToLocalMemory();
+
+        // 5. Reset month filter dropdown selection
+        populateMonthFilters();
+        const select = document.getElementById("ledger-filter-month");
+        if (select) select.value = "all";
+        
+        // Hide ops controls
+        const ops = document.getElementById("month-ops-controls");
+        if (ops) ops.style.display = "none";
+
+        renderLedgerTable();
+        renderFamiliesTable();
+        populateAddMemberFamilies();
+        populateReceiptFamilies();
+        renderDashboard();
+    });
+};
+
+const btnEditMonth = document.getElementById("btn-edit-month");
+if (btnEditMonth) {
+    btnEditMonth.addEventListener("click", openEditMonthModal);
+}
+const btnDeleteMonth = document.getElementById("btn-delete-month");
+if (btnDeleteMonth) {
+    btnDeleteMonth.addEventListener("click", deleteMonth);
+}
+
+// Table horizontal scrolling action helper
+window.scrollLedgerTable = function(amount) {
+    const container = document.querySelector(".table-responsive");
+    if (container) {
+        container.scrollBy({
+            left: amount,
+            behavior: "smooth"
+        });
+    }
+};
