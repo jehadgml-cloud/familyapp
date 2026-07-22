@@ -1,9 +1,17 @@
 // PendingUsers.gs
 
+// Same Sheets auto-date-conversion issue as Expenses.gs's date field: an
+// ISO string written to a cell can come back as a real Date object.
+// Since the original string already carried an explicit UTC "Z", .toISOString()
+// recovers the exact same instant losslessly, regardless of the
+// spreadsheet's timezone setting.
 function getPendingUsers() {
   const sheet = getSheet_(SHEET_NAMES.PENDING_USERS);
   return sheetToObjects_(sheet).rows.map(function (r) {
-    return { id: r.id, firstName: r.firstName, lastName: r.lastName, email: r.email, requestedAt: r.requestedAt };
+    return {
+      id: r.id, firstName: r.firstName, lastName: r.lastName, email: r.email,
+      requestedAt: r.requestedAt instanceof Date ? r.requestedAt.toISOString() : r.requestedAt
+    };
   });
 }
 

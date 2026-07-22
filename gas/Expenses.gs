@@ -1,11 +1,20 @@
 // Expenses.gs
 
+// Google Sheets auto-detects a plain "YYYY-MM-DD" string as a date and
+// converts the cell to a real Date value. Reading it back gives a JS Date
+// at midnight in the spreadsheet's timezone; if we let that get
+// JSON-stringified as-is it's serialized as UTC, shifting the date back a
+// day for any timezone ahead of UTC. Reformat it explicitly using the
+// spreadsheet's own timezone to recover the exact date that was entered.
 function getExpenses() {
   const sheet = getSheet_(SHEET_NAMES.EXPENSES);
   const data = sheetToObjects_(sheet);
+  const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
   return data.rows.map(function (r) {
     return {
-      id: r.id, date: r.date, amount: Number(r.amount) || 0, reason: r.reason,
+      id: r.id,
+      date: r.date instanceof Date ? Utilities.formatDate(r.date, tz, 'yyyy-MM-dd') : r.date,
+      amount: Number(r.amount) || 0, reason: r.reason,
       category: r.category, authorized: r.authorized,
       attachment: r.attachmentUrl ? { name: r.attachmentName, type: r.attachmentType, url: r.attachmentUrl } : null
     };
