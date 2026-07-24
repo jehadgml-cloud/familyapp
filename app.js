@@ -22,17 +22,48 @@ function currentUserLabel_() {
 }
 
 // Distinct, easy-to-tell-apart colors for the ledger's "who filled this in"
-// coding. Assigned by signup order (the master admin is always users[0], so
-// they get the first color, the next supervisor added gets the second, etc.)
-// — stable and predictable without needing a manual color picker anywhere.
+// coding.
 const PAYMENT_COLOR_PALETTE_ = ['#10b981', '#ef4444', '#3b82f6', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1'];
 
+// Maps lowercased email -> color, rebuilt whenever state.users changes (see
+// rebuildUserColorMap_ below). Built by sorting users by email (a stable
+// order every browser computes identically, unlike "row order in whatever
+// state.users happens to be loaded right now") and resolving any hash
+// collisions deterministically — so every supervisor's screen agrees on
+// the same color for the same person, even if one screen's user list is a
+// little older than another's (e.g. right after approving someone new).
+function rebuildUserColorMap_() {
+    const map = {};
+    const takenColors = {};
+    const sortedUsers = [...state.users].sort((a, b) => a.email.localeCompare(b.email));
+    sortedUsers.forEach(u => {
+        const email = (u.email || "").trim().toLowerCase();
+        if (!email) return;
+        let hash = 0;
+        for (let i = 0; i < email.length; i++) hash = (hash * 31 + email.charCodeAt(i)) >>> 0;
+        let idx = hash % PAYMENT_COLOR_PALETTE_.length;
+        // Walk forward to the next free color if this one's already taken
+        // by an earlier (alphabetically) user in this pass.
+        let attempts = 0;
+        while (takenColors[idx] !== undefined && attempts < PAYMENT_COLOR_PALETTE_.length) {
+            idx = (idx + 1) % PAYMENT_COLOR_PALETTE_.length;
+            attempts++;
+        }
+        takenColors[idx] = email;
+        map[email] = PAYMENT_COLOR_PALETTE_[idx];
+    });
+    state.userColorMap = map;
+}
+
+// Pulls the email out of a "name (email)" recordedBy label and looks up its
+// color. Falls back to a raw hash of the whole label for edge cases (e.g. a
+// user removed since, or a stale/unrecognized label) — still stable, just
+// not guaranteed collision-free against currently active users.
 function paymentColorForLabel_(label) {
     if (!label) return null;
-    const idx = state.users.findIndex(u => (u.name + " (" + u.email + ")") === label);
-    if (idx !== -1) return PAYMENT_COLOR_PALETTE_[idx % PAYMENT_COLOR_PALETTE_.length];
-    // Label doesn't match a current user (e.g. the user was later removed) —
-    // fall back to a stable hash so it still shows *some* consistent color.
+    const match = /\(([^)]+)\)\s*$/.exec(label);
+    const email = (match ? match[1] : label).trim().toLowerCase();
+    if (state.userColorMap[email]) return state.userColorMap[email];
     let hash = 0;
     for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) >>> 0;
     return PAYMENT_COLOR_PALETTE_[hash % PAYMENT_COLOR_PALETTE_.length];
@@ -49,8 +80,8 @@ function renderPaymentColorLegend() {
     const el = document.getElementById("payment-color-legend");
     if (!el) return;
     if (!state.users.length) { el.innerHTML = ""; return; }
-    el.innerHTML = state.users.map((u, idx) => {
-        const color = PAYMENT_COLOR_PALETTE_[idx % PAYMENT_COLOR_PALETTE_.length];
+    el.innerHTML = state.users.map(u => {
+        const color = state.userColorMap[(u.email || "").trim().toLowerCase()] || "#94a3b8";
         return `<span style="display:inline-flex; align-items:center; gap:5px; font-size:0.78rem; color:var(--text-muted); margin-left:14px;">
             <span style="width:11px; height:11px; border-radius:3px; background:${color}; display:inline-block;"></span>${u.name}
         </span>`;
@@ -120,6 +151,7 @@ let state = {
     pendingUsers: [],
     settings: {},
     paymentRecorders: {}, // "memberId|month" -> "recordedBy label" (who checked it paid)
+    userColorMap: {}, // lowercased email -> hex color (see rebuildUserColorMap_)
     originalWorkbook: null // SheetJS raw object, session-only (never persisted)
 };
 
@@ -784,6 +816,7 @@ async function loadDataFromServer() {
     state.pendingUsers = data.pendingUsers;
     state.settings = data.settings;
     state.paymentRecorders = data.paymentRecorders || {};
+    rebuildUserColorMap_();
 
     const statusEl = document.getElementById("upload-status");
     if (statusEl) {
@@ -2544,6 +2577,7 @@ window.approveUser = async function(id) {
         const result = await callApi("approveUser", { id });
         state.users = result.users;
         state.pendingUsers = result.pendingUsers;
+        rebuildUserColorMap_();
 
         alert(`✔️ تم تفعيل حساب المشرف: ${name} بنجاح!`);
         updatePendingBadge();
@@ -2623,6 +2657,7 @@ window.toggleUserStatus = function(key) {
     showConfirm(`هل أنت متأكد من ${nextIsActive ? 'تفعيل' : 'تعطيل'} حساب المشرف المالي: ${user.name}؟`, async () => {
         try {
             state.users = await callApi("setUserActive", { key, active: nextIsActive });
+            rebuildUserColorMap_();
             renderActiveUsers();
         } catch (err) {
             alert("تعذّر تغيير حالة الحساب: " + err.message);
@@ -2637,6 +2672,7 @@ window.deleteAppUser = function(key) {
     showConfirm(`⚠️ تحذير: هل أنت متأكد من الحذف النهائي لحساب المشرف: ${user.name}؟ لن يتمكن من تسجيل الدخول بعد الآن.`, async () => {
         try {
             state.users = await callApi("deleteUser", { key });
+            rebuildUserColorMap_();
             alert("🗑️ تم حذف حساب المشرف بنجاح.");
             renderActiveUsers();
         } catch (err) {
@@ -2671,6 +2707,7 @@ if (btnAddSupervisor) {
 
         try {
             state.users = await callApi("addSupervisor", { name, email, role, pass });
+            rebuildUserColorMap_();
 
             alert(`✅ تم إضافة المشرف المالي: ${name} وتفعيل حسابه فوراً وبنجاح!`);
 
