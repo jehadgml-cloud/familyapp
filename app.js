@@ -3,7 +3,7 @@
 // Google Apps Script Web App URL — paste the deployment URL from
 // gas/DEPLOYMENT.md step 3 here. Every piece of app data is read from and
 // written to the Google Sheet behind this URL; there is no local fallback.
-const API_URL = "https://script.google.com/macros/s/AKfycbxokCwpd7RhoFboc9_3VVqzpdObXAL_x6pje6uHbN6is8z91BIM7zaTLFGp6P8ttOAa/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycby0bYTLCssf8WJSbaU9D8ZyXUeRhcUEwo4ZtCuAVO0wD24sIKb1Cp6hifgb1-SdxOqc/exec";
 
 // Looks up a user in the already-loaded state.users (populated from the
 // Sheet by loadDataFromServer()). Used only for instant client-side
