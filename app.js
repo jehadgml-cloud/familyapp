@@ -2664,29 +2664,25 @@ function doRecalculateAll() {
         f.totalPaid = familySum;
     });
 
-    // 3. Save to localStorage to persist
-    saveToLocalMemory();
+    // 3. Note: this app has no localStorage persistence layer — every
+    // change is already saved server-side (Google Sheets) the moment it
+    // happens via callApi(). Recalculating locally is purely a display
+    // refresh; nothing needs to be "saved" here.
 
     // 4. Update core UI displays
     updateIndicators();
     renderCharts();
 
-    // 5. Update active view tables
-    const activeLink = document.querySelector(".nav-link.active");
-    if (activeLink) {
-        const activeTab = activeLink.getAttribute("data-tab");
-        if (activeTab === "ledger-tab") {
-            renderLedgerTable();
-        } else if (activeTab === "families-tab") {
-            renderFamiliesTable();
-        } else if (activeTab === "receipt-tab") {
-            populateReceiptFamilies();
-        } else if (activeTab === "reports-tab") {
-            renderMonthlyReport();
-        } else if (activeTab === "expenses-tab") {
-            renderExpensesTable();
-        }
-    }
+    // 5. Refresh every table that could be showing these numbers — not just
+    // the currently active tab — so switching tabs afterward never shows a
+    // stale figure. Each render function is a no-op if its tab's elements
+    // aren't in the DOM (they wouldn't exist on other pages), but here they
+    // always exist since all tabs live in the same page.
+    renderLedgerTable();
+    renderFamiliesTable();
+    populateReceiptFamilies();
+    renderMonthlyReport();
+    renderExpensesTable();
 }
 
 const btnRecalculateAll = document.getElementById("btn-recalculate-all");
