@@ -4,8 +4,21 @@
     <meta charset="UTF-8">
     <!-- Fixed desktop-width viewport: the app renders identically on mobile
          as it does on a computer (same layout, no mobile-simplified view).
-         Users pinch-zoom/pan as needed, same as viewing a desktop site. -->
-    <meta name="viewport" content="width=1280">
+         The initial-scale is computed live below so it always fits the
+         actual device width exactly, since some mobile browsers (especially
+         in installed-PWA/standalone mode) don't reliably auto-fit a bare
+         "width=1280" viewport on their own. -->
+    <meta name="viewport" id="viewport-meta" content="width=1280, initial-scale=1">
+    <script>
+        (function () {
+            var DESIGN_WIDTH = 1280;
+            var scale = window.innerWidth / DESIGN_WIDTH;
+            document.getElementById("viewport-meta").setAttribute(
+                "content",
+                "width=" + DESIGN_WIDTH + ", initial-scale=" + scale + ", maximum-scale=5, user-scalable=yes"
+            );
+        })();
+    </script>
     <title>تطبيق صندوق تحصيل عشيرة آل اطفيحة</title>
 
     <!-- PWA: installable app with a home-screen icon and standalone window -->
