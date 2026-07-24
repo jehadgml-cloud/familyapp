@@ -81,8 +81,12 @@ function setMemberPayment(payload) {
   });
   sheet.getRange(existing._row, headerIndex_(data.headers, 'sum') + 1).setValue(sum);
 
+  // Attribute this checkbox to whoever is logged in — cleared automatically
+  // when unchecked back to 0 (see setPaymentRecorder_).
+  setPaymentRecorder_(payload.id, payload.month, Number(payload.amount) > 0 ? payload.by : null);
+
   recalculateFamily_(existing.parent);
-  return { members: getMembers(), families: getFamilies() };
+  return { members: getMembers(), families: getFamilies(), paymentRecorders: getPaymentRecorders() };
 }
 
 // Sets a flat 10-shekel payment for every given month, for every member
@@ -104,6 +108,7 @@ function setFamilyPayments(payload) {
     targetMonths.forEach(function (monthKey) {
       const colIdx = data.headers.indexOf(monthKey);
       if (colIdx !== -1) sheet.getRange(r._row, colIdx + 1).setValue(10);
+      setPaymentRecorder_(r.id, monthKey, payload.by);
     });
 
     let sum = 0;
@@ -114,7 +119,7 @@ function setFamilyPayments(payload) {
   });
 
   recalculateFamily_(payload.headName);
-  return { members: getMembers(), families: getFamilies() };
+  return { members: getMembers(), families: getFamilies(), paymentRecorders: getPaymentRecorders() };
 }
 
 // Recomputes every member's `sum` from scratch. Used after a month column

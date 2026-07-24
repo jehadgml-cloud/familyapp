@@ -48,6 +48,7 @@ function setupSpreadsheet() {
   ensureSheetWithHeaders_(ss, SHEET_NAMES.SIGNATURES, ['month', 'slotIndex', 'signatureUrl', 'updatedAt']);
   ensureSheetWithHeaders_(ss, SHEET_NAMES.SETTINGS, ['key', 'value']);
   ensureSheetWithHeaders_(ss, SHEET_NAMES.AUDIT_LOG, ['id', 'timestamp', 'actor', 'action', 'details']);
+  ensureSheetWithHeaders_(ss, SHEET_NAMES.PAYMENT_RECORDERS, ['key', 'memberId', 'month', 'recordedBy']);
 
   seedMonthsIfEmpty_(monthsSheet);
   seedUsersIfEmpty_(usersSheet);

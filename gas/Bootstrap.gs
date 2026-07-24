@@ -11,6 +11,7 @@ function getAllData() {
     expenses: getExpenses(),
     users: getUsers(),
     pendingUsers: getPendingUsers(),
-    settings: getSettings()
+    settings: getSettings(),
+    paymentRecorders: getPaymentRecorders()
   };
 }

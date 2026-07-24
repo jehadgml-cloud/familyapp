@@ -21,6 +21,42 @@ function currentUserLabel_() {
     return state.currentUser ? (state.currentUser.name + " (" + state.currentUser.email + ")") : "غير مسجل دخول";
 }
 
+// Distinct, easy-to-tell-apart colors for the ledger's "who filled this in"
+// coding. Assigned by signup order (the master admin is always users[0], so
+// they get the first color, the next supervisor added gets the second, etc.)
+// — stable and predictable without needing a manual color picker anywhere.
+const PAYMENT_COLOR_PALETTE_ = ['#10b981', '#ef4444', '#3b82f6', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1'];
+
+function paymentColorForLabel_(label) {
+    if (!label) return null;
+    const idx = state.users.findIndex(u => (u.name + " (" + u.email + ")") === label);
+    if (idx !== -1) return PAYMENT_COLOR_PALETTE_[idx % PAYMENT_COLOR_PALETTE_.length];
+    // Label doesn't match a current user (e.g. the user was later removed) —
+    // fall back to a stable hash so it still shows *some* consistent color.
+    let hash = 0;
+    for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) >>> 0;
+    return PAYMENT_COLOR_PALETTE_[hash % PAYMENT_COLOR_PALETTE_.length];
+}
+
+// Applies (or clears) the "who filled this in" coloring on one ledger cell.
+function applyPaymentColor_(td, chk, color) {
+    td.style.backgroundColor = color ? color + "22" : "";
+    td.style.borderRight = color ? `3px solid ${color}` : "";
+    chk.style.accentColor = color || "";
+}
+
+function renderPaymentColorLegend() {
+    const el = document.getElementById("payment-color-legend");
+    if (!el) return;
+    if (!state.users.length) { el.innerHTML = ""; return; }
+    el.innerHTML = state.users.map((u, idx) => {
+        const color = PAYMENT_COLOR_PALETTE_[idx % PAYMENT_COLOR_PALETTE_.length];
+        return `<span style="display:inline-flex; align-items:center; gap:5px; font-size:0.78rem; color:var(--text-muted); margin-left:14px;">
+            <span style="width:11px; height:11px; border-radius:3px; background:${color}; display:inline-block;"></span>${u.name}
+        </span>`;
+    }).join("");
+}
+
 // Calls one backend action. Uses text/plain as the Content-Type so the
 // browser treats this as a CORS-simple request and skips the preflight
 // OPTIONS request — Apps Script Web Apps don't answer OPTIONS.
@@ -83,6 +119,7 @@ let state = {
     users: [],
     pendingUsers: [],
     settings: {},
+    paymentRecorders: {}, // "memberId|month" -> "recordedBy label" (who checked it paid)
     originalWorkbook: null // SheetJS raw object, session-only (never persisted)
 };
 
@@ -746,6 +783,7 @@ async function loadDataFromServer() {
     state.users = data.users;
     state.pendingUsers = data.pendingUsers;
     state.settings = data.settings;
+    state.paymentRecorders = data.paymentRecorders || {};
 
     const statusEl = document.getElementById("upload-status");
     if (statusEl) {
@@ -1013,6 +1051,7 @@ function renderLedgerHeaders() {
 
 function renderLedgerTable() {
     renderLedgerHeaders();
+    renderPaymentColorLegend();
 
     const tbody = document.getElementById("ledger-rows");
     if (!tbody) return;
@@ -1095,12 +1134,14 @@ function renderLedgerTable() {
                 const tdMonth = document.createElement("td");
                 tdMonth.style.textAlign = "center";
                 const val = member.payments[m.key] || 0;
+                const recorderLabel = state.paymentRecorders[member.id + "|" + m.key];
 
                 const chk = document.createElement("input");
                 chk.type = "checkbox";
                 chk.className = "ledger-checkbox";
                 chk.checked = val > 0;
-                
+                applyPaymentColor_(tdMonth, chk, val > 0 ? paymentColorForLabel_(recorderLabel) : null);
+
                 chk.addEventListener("change", async (e) => {
                     const isChecked = e.target.checked;
                     const paymentVal = isChecked ? 10 : 0;
@@ -1110,6 +1151,7 @@ function renderLedgerTable() {
                         const result = await callApi("setMemberPayment", { id: member.id, month: m.key, amount: paymentVal, by: currentUserLabel_() });
                         state.members = result.members;
                         state.families = result.families;
+                        if (result.paymentRecorders) state.paymentRecorders = result.paymentRecorders;
                         // Fast path: update just this row's total in place instead of
                         // rebuilding the whole table (much faster when checking off
                         // many members in a row during a collection session).
@@ -1119,6 +1161,7 @@ function renderLedgerTable() {
                             member.payments = freshMember.payments;
                             if (tdSum) tdSum.textContent = freshMember.sum + " شيكل";
                         }
+                        applyPaymentColor_(tdMonth, chk, isChecked ? paymentColorForLabel_(currentUserLabel_()) : null);
                     } catch (err) {
                         e.target.checked = !isChecked;
                         alert("تعذّر حفظ الدفعة: " + err.message);
@@ -1134,12 +1177,14 @@ function renderLedgerTable() {
             const tdMonth = document.createElement("td");
             tdMonth.style.textAlign = "center";
             const val = member.payments[filterMonth] || 0;
+            const recorderLabel = state.paymentRecorders[member.id + "|" + filterMonth];
 
             const chk = document.createElement("input");
             chk.type = "checkbox";
             chk.className = "ledger-checkbox";
             chk.checked = val > 0;
-            
+            applyPaymentColor_(tdMonth, chk, val > 0 ? paymentColorForLabel_(recorderLabel) : null);
+
             chk.addEventListener("change", async (e) => {
                 const isChecked = e.target.checked;
                 const paymentVal = isChecked ? 10 : 0;
@@ -1149,12 +1194,14 @@ function renderLedgerTable() {
                     const result = await callApi("setMemberPayment", { id: member.id, month: filterMonth, amount: paymentVal, by: currentUserLabel_() });
                     state.members = result.members;
                     state.families = result.families;
+                    if (result.paymentRecorders) state.paymentRecorders = result.paymentRecorders;
                     const freshMember = state.members.find(mem => mem.id === member.id);
                     if (freshMember) {
                         member.sum = freshMember.sum;
                         member.payments = freshMember.payments;
                         if (tdSum) tdSum.textContent = freshMember.sum + " شيكل";
                     }
+                    applyPaymentColor_(tdMonth, chk, isChecked ? paymentColorForLabel_(currentUserLabel_()) : null);
                 } catch (err) {
                     e.target.checked = !isChecked;
                     alert("تعذّر حفظ الدفعة: " + err.message);
