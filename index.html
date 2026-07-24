@@ -2,8 +2,22 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Fixed desktop-width viewport: the app renders identically on mobile
+         as it does on a computer (same layout, no mobile-simplified view).
+         Users pinch-zoom/pan as needed, same as viewing a desktop site. -->
+    <meta name="viewport" content="width=1280">
     <title>تطبيق صندوق تحصيل عشيرة آل اطفيحة</title>
+
+    <!-- PWA: installable app with a home-screen icon and standalone window -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#064e3b">
+    <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="صندوق العائلة">
+
     <!-- SheetJS (XLSX) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- Chart.js -->
@@ -149,6 +163,10 @@
                     <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
                     إدارة المشرفين
                     <span id="pending-badge" style="display:none; position:absolute; top:6px; right:6px; background:#ef4444; color:white; border-radius:50%; width:18px; height:18px; font-size:0.7rem; font-weight:700; display:none; align-items:center; justify-content:center;">0</span>
+                </button>
+                <button class="nav-link" id="nav-auditlog" data-tab="auditlog-tab" style="display:none;">
+                    <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/></svg>
+                    سجل التدقيق
                 </button>
                 <button class="nav-link" data-tab="upload-tab">
                     <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
@@ -981,6 +999,34 @@
                     </div>
                 </div>
 
+            </section>
+
+            <!-- H. TAB: Audit Log (Master Admin Only) -->
+            <section id="auditlog-tab" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">🕓 سجل التدقيق — من عدّل وأضاف وحذف، ومتى</span>
+                        <button id="btn-refresh-auditlog" class="btn btn-secondary no-print" style="padding:6px 14px; font-size:0.82rem;">🔄 تحديث</button>
+                    </div>
+                    <p style="font-size:0.82rem; color:var(--text-muted); margin: 0 0 14px 0;">
+                        كل عملية إضافة أو تعديل أو حذف على النظام (أعضاء، دفعات، مصاريف، أشهر، مستخدمين) تُسجَّل هنا تلقائياً مع اسم من قام بها ووقتها، لضمان الشفافية المالية الكاملة. يعرض آخر 500 عملية.
+                    </p>
+                    <div class="table-responsive">
+                        <table id="table-audit-log">
+                            <thead>
+                                <tr>
+                                    <th>الوقت</th>
+                                    <th>بواسطة</th>
+                                    <th>العملية</th>
+                                    <th>التفاصيل</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-log-rows">
+                                <tr><td colspan="4" style="text-align:center; color:var(--text-muted);">لا يوجد سجل بعد.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </section>
 
         </main>

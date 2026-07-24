@@ -10,7 +10,8 @@ const SHEET_NAMES = {
   USERS: 'Users',
   PENDING_USERS: 'PendingUsers',
   SIGNATURES: 'Signatures',
-  SETTINGS: 'Settings'
+  SETTINGS: 'Settings',
+  AUDIT_LOG: 'AuditLog'
 };
 
 // Columns on the Members sheet that are NOT a month payment column.

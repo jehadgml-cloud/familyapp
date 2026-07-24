@@ -50,14 +50,16 @@ const ACTIONS = {
   clearSignature: clearSignature,
 
   getSettings: getSettings,
-  setSetting: setSetting
+  setSetting: setSetting,
+
+  getAuditLog: getAuditLog
 };
 
 // Actions that only read data — skip the script lock for these.
 const READ_ONLY_ACTIONS = {
   getAllData: true, getMembers: true, getFamilies: true, getMonths: true,
   getExpenses: true, getUsers: true, getPendingUsers: true,
-  getSignatures: true, getSettings: true, login: true
+  getSignatures: true, getSettings: true, login: true, getAuditLog: true
 };
 
 function doPost(e) {
@@ -76,7 +78,12 @@ function doPost(e) {
     const lock = LockService.getScriptLock();
     lock.waitLock(30000);
     try {
-      return jsonResponse_({ result: handler(payload) });
+      const result = handler(payload);
+      // Every mutating action gets logged automatically here — individual
+      // handlers (addMember, setMemberPayment, deleteExpense, ...) don't
+      // need to know the audit log exists.
+      logAction_(action, payload);
+      return jsonResponse_({ result: result });
     } finally {
       lock.releaseLock();
     }

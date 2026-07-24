@@ -5,16 +5,37 @@
 // written to the Google Sheet behind this URL; there is no local fallback.
 const API_URL = "https://script.google.com/macros/s/AKfycbxokCwpd7RhoFboc9_3VVqzpdObXAL_x6pje6uHbN6is8z91BIM7zaTLFGp6P8ttOAa/exec";
 
+// Looks up a user in the already-loaded state.users (populated from the
+// Sheet by loadDataFromServer()). Used only for instant client-side
+// pre-checks (e.g. "this email is already registered") — the server
+// performs the authoritative check on every mutating call.
+function findUserInState_(email) {
+    if (!email) return null;
+    const lower = email.trim().toLowerCase();
+    return state.users.find(u => u.email.toLowerCase() === lower) || null;
+}
+
+// Human-readable label for "who did this" — used for the audit log. Falls
+// back to a generic label before login / for the anonymous registration form.
+function currentUserLabel_() {
+    return state.currentUser ? (state.currentUser.name + " (" + state.currentUser.email + ")") : "غير مسجل دخول";
+}
+
 // Calls one backend action. Uses text/plain as the Content-Type so the
 // browser treats this as a CORS-simple request and skips the preflight
 // OPTIONS request — Apps Script Web Apps don't answer OPTIONS.
 async function callApi(action, payload) {
+    const fullPayload = Object.assign({}, payload || {});
+    // Attach "who's doing this" automatically for the audit log, without
+    // having to remember to add it at every call site. Harmless for
+    // read-only actions — the server only logs mutating ones.
+    if (fullPayload.by === undefined) fullPayload.by = currentUserLabel_();
     let res;
     try {
         res = await fetch(API_URL, {
             method: "POST",
             headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({ action, payload: payload || {} })
+            body: JSON.stringify({ action, payload: fullPayload })
         });
     } catch (networkErr) {
         throw new Error("تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت وحاول مجدداً. (" + networkErr.message + ")");
@@ -32,16 +53,6 @@ async function callApi(action, payload) {
         throw new Error(body.error);
     }
     return body.result;
-}
-
-// Looks up a user in the already-loaded state.users (populated from the
-// Sheet by loadDataFromServer()). Used only for instant client-side
-// pre-checks (e.g. "this email is already registered") — the server
-// performs the authoritative check on every mutating call.
-function findUserInState_(email) {
-    if (!email) return null;
-    const lower = email.trim().toLowerCase();
-    return state.users.find(u => u.email.toLowerCase() === lower) || null;
 }
 
 const DEFAULT_MONTHS = [
@@ -208,6 +219,8 @@ function switchTab(tabId) {
     } else if (tabId === "usermgmt-tab") {
         renderPendingUsers();
         renderActiveUsers();
+    } else if (tabId === "auditlog-tab") {
+        renderAuditLog();
     }
 }
 
@@ -220,6 +233,7 @@ function updateTabTitle(tabId) {
         "reports-tab": "التقارير والمراجعات المالية الشهرية والسنوية",
         "expenses-tab": "سجل أوامر الصرف والمدفوعات المعتمدة",
         "usermgmt-tab": "إدارة المشرفين وطلبات التسجيل",
+        "auditlog-tab": "سجل التدقيق — من عدّل وأضاف وحذف",
         "upload-tab": "بوابة تحميل وتخزين قاعدة البيانات"
     };
     tabTitleText.textContent = titles[tabId] || "صندوق العشيرة المالي";
@@ -460,6 +474,8 @@ function doLogin(userObj) {
     const isMaster = userObj.isMaster === true;
     const navMgmt = document.getElementById("nav-usermgmt");
     if (navMgmt) navMgmt.style.display = isMaster ? "flex" : "none";
+    const navAudit = document.getElementById("nav-auditlog");
+    if (navAudit) navAudit.style.display = isMaster ? "flex" : "none";
 
     // Show pending badge count
     if (isMaster) updatePendingBadge();
@@ -1091,15 +1107,22 @@ function renderLedgerTable() {
                     chk.disabled = true;
 
                     try {
-                        const result = await callApi("setMemberPayment", { id: member.id, month: m.key, amount: paymentVal });
+                        const result = await callApi("setMemberPayment", { id: member.id, month: m.key, amount: paymentVal, by: currentUserLabel_() });
                         state.members = result.members;
                         state.families = result.families;
-                        renderLedgerTable();
-                        renderCharts();
-                        populateMonthFilters();
+                        // Fast path: update just this row's total in place instead of
+                        // rebuilding the whole table (much faster when checking off
+                        // many members in a row during a collection session).
+                        const freshMember = state.members.find(mem => mem.id === member.id);
+                        if (freshMember) {
+                            member.sum = freshMember.sum;
+                            member.payments = freshMember.payments;
+                            if (tdSum) tdSum.textContent = freshMember.sum + " شيكل";
+                        }
                     } catch (err) {
                         e.target.checked = !isChecked;
                         alert("تعذّر حفظ الدفعة: " + err.message);
+                    } finally {
                         chk.disabled = false;
                     }
                 });
@@ -1123,15 +1146,19 @@ function renderLedgerTable() {
                 chk.disabled = true;
 
                 try {
-                    const result = await callApi("setMemberPayment", { id: member.id, month: filterMonth, amount: paymentVal });
+                    const result = await callApi("setMemberPayment", { id: member.id, month: filterMonth, amount: paymentVal, by: currentUserLabel_() });
                     state.members = result.members;
                     state.families = result.families;
-                    renderLedgerTable();
-                    renderCharts();
-                    populateMonthFilters();
+                    const freshMember = state.members.find(mem => mem.id === member.id);
+                    if (freshMember) {
+                        member.sum = freshMember.sum;
+                        member.payments = freshMember.payments;
+                        if (tdSum) tdSum.textContent = freshMember.sum + " شيكل";
+                    }
                 } catch (err) {
                     e.target.checked = !isChecked;
                     alert("تعذّر حفظ الدفعة: " + err.message);
+                } finally {
                     chk.disabled = false;
                 }
             });
@@ -1542,7 +1569,7 @@ function renderMonthlyReport() {
     // Fill Date & Admin dynamically
     const todayStr = new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'numeric', day: 'numeric' });
     document.getElementById("r-date").textContent = todayStr;
-    document.getElementById("r-admin").textContent = state.currentUser ? state.currentUser.name : "اللجنة المالية";
+    document.getElementById("r-admin").textContent = "اللجنة المالية";
 
     // Refresh digital signatures for printable report monthly sheet
     if (window.updateSignaturesDisplay) {
@@ -2345,6 +2372,89 @@ function updatePendingBadge() {
         label.textContent = `${count} طلب${count === 1 ? '' : 'ات'}`;
     }
 }
+
+// Human-readable Arabic labels for raw backend action names, shown in the
+// audit log so a non-technical reader can follow it without knowing the API.
+const AUDIT_ACTION_LABELS_ = {
+    addMember: "إضافة عضو جديد",
+    updateMember: "تعديل بيانات عضو",
+    deleteMember: "حذف عضو",
+    setMemberPayment: "تسجيل/إلغاء دفعة شهرية",
+    setFamilyPayments: "تسجيل دفعة جماعية لعائلة",
+    recalculateEverything: "إعادة احتساب كل الأرصدة",
+    bulkImportMembers: "استيراد بيانات من ملف Excel",
+    addFamily: "إضافة عائلة",
+    updateFamily: "تعديل عائلة",
+    deleteFamily: "حذف عائلة",
+    addMonth: "إضافة شهر جباية",
+    updateMonth: "تعديل اسم شهر",
+    deleteMonth: "حذف شهر جباية",
+    setSelectedMonths: "تغيير الأشهر المعروضة بالسجل",
+    addExpense: "تسجيل أمر صرف",
+    deleteExpense: "حذف أمر صرف",
+    changePassword: "تغيير كلمة مرور",
+    resetPassword: "إعادة تعيين كلمة مرور",
+    addSupervisor: "إضافة مشرف جديد",
+    updateUser: "تعديل بيانات مستخدم",
+    setUserActive: "تفعيل/تعطيل مستخدم",
+    deleteUser: "حذف مستخدم",
+    requestRegistration: "طلب تسجيل حساب جديد",
+    approveUser: "الموافقة على طلب تسجيل",
+    rejectUser: "رفض طلب تسجيل",
+    saveSignature: "حفظ توقيع رقمي",
+    clearSignature: "مسح توقيع رقمي",
+    setSetting: "تعديل إعداد بالنظام"
+};
+
+async function renderAuditLog() {
+    const tbody = document.getElementById("audit-log-rows");
+    if (!tbody) return;
+
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted);">جارِ التحميل...</td></tr>`;
+
+    let logs;
+    try {
+        logs = await callApi("getAuditLog", {});
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#ef4444;">تعذّر تحميل سجل التدقيق: ${err.message}</td></tr>`;
+        return;
+    }
+
+    if (!logs || logs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted);">لا يوجد سجل بعد.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = "";
+    logs.forEach(entry => {
+        const tr = document.createElement("tr");
+        const actionLabel = AUDIT_ACTION_LABELS_[entry.action] || entry.action;
+
+        let detailsText = "-";
+        try {
+            const parsed = JSON.parse(entry.details || "{}");
+            const parts = Object.keys(parsed)
+                .filter(k => parsed[k] !== undefined && parsed[k] !== "" && typeof parsed[k] !== "object")
+                .map(k => `${k}: ${parsed[k]}`);
+            if (parts.length) detailsText = parts.join(" | ");
+        } catch (e) {
+            detailsText = entry.details || "-";
+        }
+
+        tr.innerHTML = `
+            <td style="white-space:nowrap; font-size:0.82rem; color:var(--text-muted);">${entry.timestamp}</td>
+            <td style="font-weight:600;">${entry.actor}</td>
+            <td><span style="background:rgba(16,185,129,0.12); color:var(--primary-hover); padding:2px 10px; border-radius:10px; font-size:0.78rem; white-space:nowrap;">${actionLabel}</span></td>
+            <td style="font-size:0.8rem; color:var(--text-muted); max-width:340px;">${detailsText}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const btnRefreshAudit = document.getElementById("btn-refresh-auditlog");
+    if (btnRefreshAudit) btnRefreshAudit.addEventListener("click", renderAuditLog);
+});
 
 function renderPendingUsers() {
     const tbody = document.getElementById("pending-user-rows");
