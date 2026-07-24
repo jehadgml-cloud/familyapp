@@ -2941,21 +2941,30 @@ window.updateSignaturesDisplay = async function() {
     const reportSelect = document.getElementById("report-select-month");
     if (!reportSelect) return;
     const monthVal = reportSelect.value;
-    let sigs = {};
+    let sigs = null;
+    let loadError = null;
     try {
         sigs = await callApi("getSignatures", { month: monthVal });
     } catch (err) {
-        console.error("Could not load signatures:", err);
+        loadError = err.message || "خطأ غير معروف";
     }
 
     for (let i = 1; i <= 5; i++) {
         const area = document.getElementById(`sig-area-${i}`);
         if (!area) continue;
-        
-        if (sigs[i]) {
+
+        if (loadError) {
+            // Surface the real error instead of silently falling back to the
+            // "not signed yet" button — that hid genuine failures before.
+            area.innerHTML = `<div style="font-size:0.7rem; color:#ef4444; text-align:center; padding:4px;">⚠️ تعذّر تحميل التوقيع<br>${loadError}</div>`;
+            continue;
+        }
+
+        if (sigs && sigs[i]) {
             area.innerHTML = `
                 <div style="display:flex; align-items:center; justify-content:center; gap:4px; height:45px;">
-                    <img src="${sigs[i]}" style="max-height: 42px; max-width: 100%; object-fit: contain; margin-top: 4px;" alt="توقيع">
+                    <img src="${sigs[i]}" style="max-height: 42px; max-width: 100%; object-fit: contain; margin-top: 4px;" alt="توقيع"
+                         onerror="this.parentElement.innerHTML='&lt;div style=&quot;font-size:0.68rem;color:#ef4444;&quot;&gt;⚠️ الصورة ما انفتحت&lt;/div&gt;'">
                     <button class="btn-sig-clear no-print" onclick="clearSignature('${i}')" title="إزالة التوقيع">❌</button>
                 </div>
             `;
