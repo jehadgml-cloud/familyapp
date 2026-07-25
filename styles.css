@@ -75,15 +75,15 @@ aside .brand h2 {
     font-size: 1.1rem;
     font-weight: 700;
     line-height: 1.4;
-    color: #34d399;
+    color: var(--gold);
 }
 
 .brand-logo {
-    width: 44px;
-    height: 44px;
+    width: 56px;
+    height: 56px;
     object-fit: contain;
     border-radius: 50%;
-    border: 2px solid #34d399;
+    border: 2px solid var(--gold);
     background-color: #fff;
     padding: 2px;
 }
@@ -696,8 +696,8 @@ tr:hover td {
 }
 
 .login-logo {
-    width: 150px;
-    height: 150px;
+    width: 190px;
+    height: 190px;
     object-fit: contain;
     border-radius: 50%;
     border: 4px solid var(--gold);
