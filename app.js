@@ -1670,8 +1670,20 @@ document.getElementById("btn-print-all-receipts").addEventListener("click", () =
     const debugLines = []; // TEMPORARY: helps diagnose "no receipts found" cases
 
     state.families.forEach(family => {
-        const normHead = normalizeArabicName(family.headName);
-        const familyMembers = state.members.filter(m => normalizeArabicName(m.parent) === normHead);
+        // The "parent" field on members is empty in this dataset — fall
+        // back to matching by the family's stored membersList (names
+        // separated by "، "), which is the same data already used to show
+        // "أفراد الأسرة المشمولين" on the regular single-receipt preview.
+        const nameSet = new Set(
+            (family.membersList || "")
+                .split(/[،,]/)
+                .map(n => normalizeArabicName(n))
+                .filter(Boolean)
+        );
+        let familyMembers = state.members.filter(m => normalizeArabicName(m.parent) === normalizeArabicName(family.headName));
+        if (familyMembers.length === 0 && nameSet.size > 0) {
+            familyMembers = state.members.filter(m => nameSet.has(normalizeArabicName(m.name)));
+        }
         const amountForMonth = familyMembers.reduce((sum, m) => sum + (m.payments[monthKey] || 0), 0);
         debugLines.push(`${family.headName} | أعضاء مطابقين: ${familyMembers.length} | مبلغ الشهر: ${amountForMonth}`);
         if (amountForMonth <= 0) return; // Nothing paid this month — skip.
@@ -1695,10 +1707,14 @@ document.getElementById("btn-print-all-receipts").addEventListener("click", () =
         const rawMemberSample = state.members.slice(0, 5)
             .map(m => `name=[${m.name}] parent=[${m.parent}]`)
             .join("\n");
+        const membersListSample = state.families.slice(0, 3)
+            .map(f => `${f.headName} -> membersList=[${f.membersList}]`)
+            .join("\n");
         alert(`لا يوجد أي عائلة دفعت اشتراكها لشهر "${monthKey}" — لا توجد وصولات لطباعتها.\n\n` +
               `🔍 إجمالي: ${state.members.length} عضو، ${state.families.length} عائلة\n\n` +
               `أول 8 عائلات:\n${sample}\n\n` +
-              `أول 5 أعضاء (خام):\n${rawMemberSample}`);
+              `أول 5 أعضاء (خام):\n${rawMemberSample}\n\n` +
+              `عينة membersList:\n${membersListSample}`);
         if (summaryEl) summaryEl.textContent = "";
         return;
     }
