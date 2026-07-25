@@ -650,6 +650,19 @@
 
             <!-- E. TAB: Monthly Reports -->
             <section id="reports-tab" class="tab-content">
+                <div class="card no-print" style="margin-bottom: 16px; border: 1px solid rgba(29,78,216,0.3); background: linear-gradient(135deg, rgba(29,78,216,0.05), rgba(202,138,4,0.04));">
+                    <div class="card-header">
+                        <span class="card-title">📊 تقرير شامل متعدد الأشهر (تحصيل + مصروفات)</span>
+                    </div>
+                    <p style="font-size:0.82rem; color:var(--text-muted); margin:0 0 12px 0;">
+                        حددي الأشهر اللي بدك التقرير يغطيها، وبيتولّد تقرير واحد مجمّع يشمل: إجمالي التحصيل، جدول مدفوعات كل الأعضاء لهذه الأشهر، وكشف تفصيلي بكل قيود المصروفات بنفس الفترة.
+                    </p>
+                    <div id="comprehensive-report-months" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:8px; margin-bottom:14px;"><!-- Dynamic checkboxes --></div>
+                    <button id="btn-print-comprehensive-report" class="btn btn-primary">
+                        🖨️ طباعة التقرير الشامل للأشهر المحددة
+                    </button>
+                </div>
+
                 <div class="card">
                     <div class="card-header">
                         <span class="card-title">التقارير والمراجعات المالية الشهرية والسنوية</span>
@@ -836,6 +849,9 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Fallback print container for the multi-month comprehensive report -->
+                <div id="print-comprehensive-report-container" style="display: none;"></div>
             </section>
 
             <!-- E2. TAB: Expenses / Expenditure -->
@@ -1191,6 +1207,6 @@
 
     <!-- Script Entrypoint -->
     <script src="data.js"></script>
-    <script src="app.js?v=18"></script>
+    <script src="app.js?v=19"></script>
 </body>
 </html>

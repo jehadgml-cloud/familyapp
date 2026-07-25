@@ -285,6 +285,7 @@ function switchTab(tabId) {
         populateReceiptFamilies();
     } else if (tabId === "reports-tab") {
         renderMonthlyReport();
+        populateComprehensiveReportMonths();
     } else if (tabId === "usermgmt-tab") {
         renderPendingUsers();
         renderActiveUsers();
@@ -1944,6 +1945,161 @@ document.getElementById("btn-print-report").addEventListener("click", () => {
     
     // Hide components on page to leave only report container card for print dialog
     window.print();
+});
+
+// -------------------------------------------------------------
+// Comprehensive multi-month report (collection + expenses combined)
+// -------------------------------------------------------------
+function populateComprehensiveReportMonths() {
+    const container = document.getElementById("comprehensive-report-months");
+    if (!container) return;
+    const prevChecked = new Set(
+        Array.from(container.querySelectorAll("input:checked")).map(c => c.value)
+    );
+    container.innerHTML = "";
+    state.monthsList.forEach(m => {
+        const label = document.createElement("label");
+        label.style.cssText = "display:flex; align-items:center; gap:6px; font-size:0.85rem; background:var(--card-bg); border:1px solid var(--border); border-radius:8px; padding:6px 10px; cursor:pointer;";
+        label.innerHTML = `<input type="checkbox" class="comprehensive-month-chk" value="${m.key}" ${prevChecked.has(m.key) ? "checked" : ""}> ${m.key}`;
+        container.appendChild(label);
+    });
+}
+
+function buildComprehensiveReportHtml_(selectedMonths) {
+    const todayStr = new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'numeric', day: 'numeric' });
+    const monthsLabel = selectedMonths.join("، ");
+
+    // Per-member totals across just the selected months.
+    let totalExpected = 0;
+    let totalCollected = 0;
+    const memberRows = state.members.map(m => {
+        const memberTotal = selectedMonths.reduce((sum, mk) => sum + (m.payments[mk] || 0), 0);
+        totalExpected += 10 * selectedMonths.length;
+        totalCollected += memberTotal;
+        return { name: m.name, parent: m.parent, total: memberTotal, maxPossible: 10 * selectedMonths.length };
+    });
+
+    const monthYearPairs = selectedMonths.map(mk => {
+        const m = state.monthsList.find(x => x.key === mk);
+        const yearMatch = mk.match(/\d{4}/);
+        return { id: m ? m.id : null, year: yearMatch ? parseInt(yearMatch[0]) : null };
+    });
+    const periodExpenses = state.expenses.filter(e => {
+        if (!e.date) return false;
+        const parts = e.date.split('-');
+        if (parts.length < 3) return false;
+        const expYear = parseInt(parts[0]);
+        const expMonth = parseInt(parts[1]);
+        return monthYearPairs.some(p => p.id === expMonth && (p.year ? p.year === expYear : true));
+    });
+    const totalExpenses = periodExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+    const netBalance = totalCollected - totalExpenses;
+
+    const memberRowsHtml = memberRows.map((m, idx) => `
+        <tr>
+            <td style="padding:4px 8px;">${idx + 1}</td>
+            <td style="padding:4px 8px;"><strong>${m.name}</strong></td>
+            <td style="padding:4px 8px;">${m.parent || "-"}</td>
+            <td style="padding:4px 8px; font-weight:700; color:${m.total >= m.maxPossible ? '#10b981' : (m.total > 0 ? '#f59e0b' : '#ef4444')};">${m.total} / ${m.maxPossible} شيكل</td>
+        </tr>
+    `).join("");
+
+    const expenseRowsHtml = periodExpenses.length > 0 ? periodExpenses.map((e, idx) => `
+        <tr>
+            <td style="padding:4px 8px;">${idx + 1}</td>
+            <td style="padding:4px 8px;">${e.date}</td>
+            <td style="padding:4px 8px;">${e.reason}</td>
+            <td style="padding:4px 8px;">${e.category}</td>
+            <td style="padding:4px 8px; color:#f59e0b; font-weight:700;">${e.amount} شيكل</td>
+            <td style="padding:4px 8px;">${e.authorized}</td>
+        </tr>
+    `).join("") : `<tr><td colspan="6" style="text-align:center; padding:10px;">لا توجد مصروفات مسجّلة بهذه الفترة.</td></tr>`;
+
+    return `
+        <div style="padding:20px; border:2px solid #000; font-family:'Cairo', sans-serif;">
+            <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid #000; padding-bottom:10px; margin-bottom:14px;">
+                <div style="display:flex; align-items:center; gap:14px;">
+                    <img src="logo.png" alt="شعار العشيرة" style="width:55px; height:55px; object-fit:contain;">
+                    <div>
+                        <h2 style="margin:0; font-size:1.2rem;">تقرير شامل — صندوق تحصيل عائلة آل اطفيحة</h2>
+                        <p style="font-size:0.75rem; margin:2px 0 0 0; color:#555;">الفترة: ${monthsLabel}</p>
+                    </div>
+                </div>
+                <div style="font-size:0.78rem; text-align:left;">تاريخ الإصدار: ${todayStr}</div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin-bottom:18px;">
+                <div style="border:1px solid #ccc; border-radius:8px; padding:10px; text-align:center;">
+                    <div style="font-size:0.72rem; color:#666;">إجمالي المحصّل</div>
+                    <div style="font-size:1.15rem; font-weight:700; color:#1d4ed8;">${totalCollected} شيكل</div>
+                </div>
+                <div style="border:1px solid #ccc; border-radius:8px; padding:10px; text-align:center;">
+                    <div style="font-size:0.72rem; color:#666;">إجمالي المصروفات</div>
+                    <div style="font-size:1.15rem; font-weight:700; color:#f59e0b;">${totalExpenses} شيكل</div>
+                </div>
+                <div style="border:1px solid #ccc; border-radius:8px; padding:10px; text-align:center;">
+                    <div style="font-size:0.72rem; color:#666;">الرصيد الصافي للفترة</div>
+                    <div style="font-size:1.15rem; font-weight:700; color:${netBalance >= 0 ? '#10b981' : '#ef4444'};">${netBalance} شيكل</div>
+                </div>
+                <div style="border:1px solid #ccc; border-radius:8px; padding:10px; text-align:center;">
+                    <div style="font-size:0.72rem; color:#666;">عدد الأشهر المشمولة</div>
+                    <div style="font-size:1.15rem; font-weight:700;">${selectedMonths.length}</div>
+                </div>
+            </div>
+
+            <h3 style="font-size:1rem; border-bottom:1px solid #999; padding-bottom:4px; margin-bottom:8px;">📋 مدفوعات الأعضاء لهذه الفترة</h3>
+            <table style="width:100%; border-collapse:collapse; font-size:0.82rem; margin-bottom:18px;">
+                <thead>
+                    <tr style="background:#f1f5f9;">
+                        <th style="padding:4px 8px; text-align:right;">#</th>
+                        <th style="padding:4px 8px; text-align:right;">الاسم</th>
+                        <th style="padding:4px 8px; text-align:right;">العائلة</th>
+                        <th style="padding:4px 8px; text-align:right;">المدفوع / المستحق</th>
+                    </tr>
+                </thead>
+                <tbody>${memberRowsHtml}</tbody>
+            </table>
+
+            <h3 style="font-size:1rem; border-bottom:1px solid #999; padding-bottom:4px; margin-bottom:8px;">💸 كشف المصروفات لهذه الفترة (${periodExpenses.length} قيد)</h3>
+            <table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
+                <thead>
+                    <tr style="background:#f1f5f9;">
+                        <th style="padding:4px 8px; text-align:right;">#</th>
+                        <th style="padding:4px 8px; text-align:right;">التاريخ</th>
+                        <th style="padding:4px 8px; text-align:right;">السبب</th>
+                        <th style="padding:4px 8px; text-align:right;">التصنيف</th>
+                        <th style="padding:4px 8px; text-align:right;">المبلغ</th>
+                        <th style="padding:4px 8px; text-align:right;">المعتمد من</th>
+                    </tr>
+                </thead>
+                <tbody>${expenseRowsHtml}</tbody>
+            </table>
+        </div>
+    `;
+}
+
+document.getElementById("btn-print-comprehensive-report").addEventListener("click", () => {
+    const selectedMonths = Array.from(document.querySelectorAll(".comprehensive-month-chk:checked")).map(c => c.value);
+    if (selectedMonths.length === 0) {
+        alert("الرجاء تحديد شهر واحد على الأقل للتقرير الشامل.");
+        return;
+    }
+
+    const container = document.getElementById("print-comprehensive-report-container");
+    container.innerHTML = buildComprehensiveReportHtml_(selectedMonths);
+
+    // Hide the regular single-month report while this one prints, so both
+    // don't show up stacked in the same print job.
+    const singleReport = document.getElementById("printable-monthly-report");
+    const singleReportWasDisplay = singleReport ? singleReport.style.display : null;
+    if (singleReport) singleReport.style.display = "none";
+    container.style.display = "block";
+
+    window.print();
+
+    container.style.display = "none";
+    container.innerHTML = "";
+    if (singleReport) singleReport.style.display = singleReportWasDisplay || "";
 });
 
 // -------------------------------------------------------------
