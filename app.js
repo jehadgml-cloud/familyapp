@@ -1667,11 +1667,13 @@ document.getElementById("btn-print-all-receipts").addEventListener("click", () =
     const baseReceiptNo = parseInt(receiptNo.value, 10) || 1001;
     let receiptCounter = baseReceiptNo;
     const blocks = [];
+    const debugLines = []; // TEMPORARY: helps diagnose "no receipts found" cases
 
     state.families.forEach(family => {
         const normHead = normalizeArabicName(family.headName);
         const familyMembers = state.members.filter(m => normalizeArabicName(m.parent) === normHead);
         const amountForMonth = familyMembers.reduce((sum, m) => sum + (m.payments[monthKey] || 0), 0);
+        debugLines.push(`${family.headName} | أعضاء مطابقين: ${familyMembers.length} | مبلغ الشهر: ${amountForMonth}`);
         if (amountForMonth <= 0) return; // Nothing paid this month — skip.
 
         blocks.push(buildReceiptHtml_(
@@ -1686,7 +1688,11 @@ document.getElementById("btn-print-all-receipts").addEventListener("click", () =
     });
 
     if (blocks.length === 0) {
-        alert(`لا يوجد أي عائلة دفعت اشتراكها لشهر "${monthKey}" — لا توجد وصولات لطباعتها.`);
+        // TEMPORARY DEBUG: show the per-family breakdown so the real cause
+        // (name mismatch vs. month-key mismatch vs. genuinely zero) is
+        // visible without dev tools.
+        const sample = debugLines.slice(0, 8).join("\n");
+        alert(`لا يوجد أي عائلة دفعت اشتراكها لشهر "${monthKey}" — لا توجد وصولات لطباعتها.\n\n🔍 تشخيص (أول 8 عائلات):\n${sample}`);
         if (summaryEl) summaryEl.textContent = "";
         return;
     }
