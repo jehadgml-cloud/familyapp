@@ -2,6 +2,12 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
+    <!-- Prevent browsers/PWA shells from caching this HTML shell itself —
+         otherwise updates to app.js's cache-busting version number never
+         get seen because the page referencing it is stale too. -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <!-- Fixed desktop-width viewport: the app renders identically on mobile
          as it does on a computer (same layout, no mobile-simplified view).
          The initial-scale is computed live below so it always fits the
@@ -1162,6 +1168,6 @@
 
     <!-- Script Entrypoint -->
     <script src="data.js"></script>
-    <script src="app.js?v=9"></script>
+    <script src="app.js?v=10"></script>
 </body>
 </html>
