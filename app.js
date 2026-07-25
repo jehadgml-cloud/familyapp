@@ -2950,13 +2950,9 @@ window.updateSignaturesDisplay = async function() {
     }
 
     // TEMPORARY DEBUG: show exactly what was requested and what came back,
-    // so a mismatch is visible without needing browser dev tools. Remove
-    // once the root cause is confirmed.
+    // so a mismatch is visible without needing browser dev tools.
     const debugEl = document.getElementById("sig-debug-info");
-    if (debugEl) {
-        debugEl.style.display = "block";
-        debugEl.textContent = "🔍 تشخيص: الشهر المطلوب = [" + monthVal + "] | الرد = " + (loadError ? ("خطأ: " + loadError) : JSON.stringify(sigs));
-    }
+    if (debugEl) debugEl.style.display = "none";
 
     for (let i = 1; i <= 5; i++) {
         const area = document.getElementById(`sig-area-${i}`);
