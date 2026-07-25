@@ -1497,6 +1497,19 @@ function populateReceiptFamilies() {
         opt.textContent = `${f.headName} (${f.memberCount} أفراد)`;
         receiptSelectFamily.appendChild(opt);
     });
+
+    const bulkMonthSelect = document.getElementById("bulk-receipt-month");
+    if (bulkMonthSelect) {
+        const prevVal = bulkMonthSelect.value;
+        bulkMonthSelect.innerHTML = "";
+        state.monthsList.forEach(m => {
+            const opt = document.createElement("option");
+            opt.value = m.key;
+            opt.textContent = m.key;
+            bulkMonthSelect.appendChild(opt);
+        });
+        if (prevVal && state.monthsList.some(m => m.key === prevVal)) bulkMonthSelect.value = prevVal;
+    }
 }
 
 function updatePrintPreview() {
@@ -1559,7 +1572,135 @@ document.getElementById("btn-copy-receipt-txt").addEventListener("click", () => 
         .catch(err => alert("خطأ في النسخ: " + err));
 });
 
-// Printing physical receipts triggers
+// Builds one receipt's printable HTML (same visual layout as the live
+// preview card) for the bulk-print feature — one call per family.
+function buildReceiptHtml_(headName, membersList, amount, monthKey, receiptNo, notes) {
+    const todayStr = new Date().toLocaleDateString('en-CA'); // yyyy-mm-dd, matches the live preview's format
+    const membersRowStyle = membersList ? "display:flex;" : "display:none;";
+    const adminName = "اللجنة المالية";
+    return `
+        <div class="receipt-printable">
+            <div class="receipt-header">
+                <div style="display: flex; align-items: center; gap: 14px;">
+                    <img src="logo.png" alt="شعار العشيرة" style="width: 55px; height: 55px; object-fit: contain; border-radius: 4px;">
+                    <div>
+                        <h3 class="title" style="margin: 0; font-size: 1.15rem;">صندوق تحصيل عائلة آل اطفيحة</h3>
+                        <p style="font-size: 0.72rem; margin: 2px 0 0 0; color: #555;">اللجنة المالية المركزية للعشيرة</p>
+                    </div>
+                </div>
+                <div class="meta">
+                    <div>رقم السند: <strong>${receiptNo}</strong></div>
+                    <div>التاريخ: <span>${todayStr}</span></div>
+                </div>
+            </div>
+            <p style="text-align: center; font-weight: bold; font-size: 1.1rem; margin: 10px 0; border: 1px solid #000; padding: 4px; border-radius: 4px;">
+                سند قبض مالي نقدي
+            </p>
+            <div class="receipt-body">
+                <div class="receipt-row">
+                    <span class="label">وصلنا من السيد / العائلة:</span>
+                    <span class="value">${headName}</span>
+                </div>
+                <div class="receipt-row" style="${membersRowStyle} background: rgba(16, 185, 129, 0.04); border-radius: 4px; padding: 6px;">
+                    <span class="label">أفراد الأسرة المشمولين:</span>
+                    <span class="value" style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted); line-height: 1.4;">${membersList || "-"}</span>
+                </div>
+                <div class="receipt-row">
+                    <span class="label">المبلغ المكتوب:</span>
+                    <span class="value"><strong>${amount}</strong> شيكل فقط لا غير</span>
+                </div>
+                <div class="receipt-row">
+                    <span class="label">وذلك عن إشتراك شهور:</span>
+                    <span class="value">${monthKey}</span>
+                </div>
+                <div class="receipt-row">
+                    <span class="label">المسؤول المستلم:</span>
+                    <span class="value">${adminName}</span>
+                </div>
+                <div class="receipt-row" style="border: none;">
+                    <span class="label">ملاحظات:</span>
+                    <span class="value">${notes || "-"}</span>
+                </div>
+            </div>
+            <div class="receipt-signatures">
+                <div class="signature-block">
+                    <span class="role">رئيس اللجنة المالية</span>
+                    <span class="name">جهاد زكري إسماعيل اطفيحة</span>
+                    <div class="line"></div>
+                </div>
+                <div class="signature-block">
+                    <span class="role">نائب رئيس اللجنة</span>
+                    <span class="name">أشرف يوسف محمود اطفيحة</span>
+                    <div class="line"></div>
+                </div>
+                <div class="signature-block">
+                    <span class="role">أمين الصندوق</span>
+                    <span class="name">إبراهيم محمد إبراهيم اطفيحة</span>
+                    <div class="line"></div>
+                </div>
+                <div class="signature-block">
+                    <span class="role">المراقب المالي</span>
+                    <span class="name">معتز أمين محمد محمود اطفيحة</span>
+                    <div class="line"></div>
+                </div>
+                <div class="signature-block">
+                    <span class="role">منسق التحصيل</span>
+                    <span class="name">حبيب محمود محمد اطفيحة</span>
+                    <div class="line"></div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Bulk-print: one receipt per family that actually paid something for the
+// selected month (families with zero for that month are skipped — nothing
+// to receipt for them).
+document.getElementById("btn-print-all-receipts").addEventListener("click", () => {
+    const monthKey = document.getElementById("bulk-receipt-month").value;
+    const summaryEl = document.getElementById("bulk-receipt-summary");
+    if (!monthKey) {
+        alert("الرجاء اختيار الشهر أولاً.");
+        return;
+    }
+
+    const baseReceiptNo = parseInt(receiptNo.value, 10) || 1001;
+    let receiptCounter = baseReceiptNo;
+    const blocks = [];
+
+    state.families.forEach(family => {
+        const familyMembers = state.members.filter(m => m.parent === family.headName);
+        const amountForMonth = familyMembers.reduce((sum, m) => sum + (m.payments[monthKey] || 0), 0);
+        if (amountForMonth <= 0) return; // Nothing paid this month — skip.
+
+        blocks.push(buildReceiptHtml_(
+            family.headName,
+            family.membersList,
+            amountForMonth,
+            monthKey,
+            receiptCounter,
+            "دفعة شهر " + monthKey
+        ));
+        receiptCounter++;
+    });
+
+    if (blocks.length === 0) {
+        alert(`لا يوجد أي عائلة دفعت اشتراكها لشهر "${monthKey}" — لا توجد وصولات لطباعتها.`);
+        if (summaryEl) summaryEl.textContent = "";
+        return;
+    }
+
+    if (summaryEl) summaryEl.textContent = `✅ تم توليد ${blocks.length} وصل لشهر ${monthKey}. جارِ فتح نافذة الطباعة...`;
+
+    const container = document.getElementById("print-all-receipts-container");
+    container.innerHTML = blocks.join("");
+    container.style.display = "block";
+
+    window.print();
+
+    container.style.display = "none";
+    container.innerHTML = "";
+});
 document.getElementById("btn-print-receipt").addEventListener("click", () => {
     const headName = receiptSelectFamily.value;
     if (!headName) {

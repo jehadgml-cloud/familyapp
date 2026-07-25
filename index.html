@@ -41,7 +41,7 @@
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="styles.css?v=6">
+    <link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
 
@@ -484,6 +484,25 @@
 
             <!-- D. TAB: Receipt Generator -->
             <section id="receipt-tab" class="tab-content">
+                <div class="card no-print" style="margin-bottom: 16px; border: 1px solid rgba(29,78,216,0.3); background: linear-gradient(135deg, rgba(29,78,216,0.05), rgba(202,138,4,0.04));">
+                    <div class="card-header">
+                        <span class="card-title">🖨️ طباعة جميع الوصولات دفعة واحدة</span>
+                    </div>
+                    <p style="font-size:0.82rem; color:var(--text-muted); margin:0 0 12px 0;">
+                        اختر الشهر، وبضغطة واحدة يتم توليد وطباعة وصل مالي منفصل لكل رب عائلة دفع اشتراكه بذلك الشهر (العائلات اللي ما دفعت شي بهذا الشهر بيتم تخطّيها تلقائياً).
+                    </p>
+                    <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+                        <div class="form-group" style="flex:1; min-width:200px; margin:0;">
+                            <label for="bulk-receipt-month">الشهر</label>
+                            <select id="bulk-receipt-month" class="form-control"><!-- Dynamic --></select>
+                        </div>
+                        <button id="btn-print-all-receipts" class="btn btn-primary" style="white-space:nowrap;">
+                            🖨️ طباعة كل الوصولات لهذا الشهر
+                        </button>
+                    </div>
+                    <div id="bulk-receipt-summary" style="font-size:0.8rem; color:var(--text-muted); margin-top:10px;"></div>
+                </div>
+
                 <div class="receipt-workspace no-print">
                     <!-- Form input panel -->
                     <div class="card">
@@ -624,6 +643,9 @@
 
                 <!-- Fallback print container, visible ONLY in print layout -->
                 <div id="print-recipient-only" class="receipt-printable" style="display: none;"></div>
+
+                <!-- Bulk-print container: filled with one receipt block per family, visible ONLY in print layout -->
+                <div id="print-all-receipts-container" style="display: none;"></div>
             </section>
 
             <!-- E. TAB: Monthly Reports -->
@@ -1169,6 +1191,6 @@
 
     <!-- Script Entrypoint -->
     <script src="data.js"></script>
-    <script src="app.js?v=13"></script>
+    <script src="app.js?v=14"></script>
 </body>
 </html>

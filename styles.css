@@ -942,6 +942,10 @@ tr:hover td {
         padding: 20px !important;
         page-break-inside: avoid;
     }
+    #print-all-receipts-container .receipt-printable:not(:last-child) {
+        page-break-after: always;
+        margin-bottom: 0 !important;
+    }
     .signature-block {
         border: 1px solid #777 !important;
         background-color: white !important;
