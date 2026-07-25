@@ -1692,7 +1692,13 @@ document.getElementById("btn-print-all-receipts").addEventListener("click", () =
         // (name mismatch vs. month-key mismatch vs. genuinely zero) is
         // visible without dev tools.
         const sample = debugLines.slice(0, 8).join("\n");
-        alert(`لا يوجد أي عائلة دفعت اشتراكها لشهر "${monthKey}" — لا توجد وصولات لطباعتها.\n\n🔍 تشخيص (أول 8 عائلات):\n${sample}`);
+        const rawMemberSample = state.members.slice(0, 5)
+            .map(m => `name=[${m.name}] parent=[${m.parent}]`)
+            .join("\n");
+        alert(`لا يوجد أي عائلة دفعت اشتراكها لشهر "${monthKey}" — لا توجد وصولات لطباعتها.\n\n` +
+              `🔍 إجمالي: ${state.members.length} عضو، ${state.families.length} عائلة\n\n` +
+              `أول 8 عائلات:\n${sample}\n\n` +
+              `أول 5 أعضاء (خام):\n${rawMemberSample}`);
         if (summaryEl) summaryEl.textContent = "";
         return;
     }
