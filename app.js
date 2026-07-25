@@ -1669,7 +1669,8 @@ document.getElementById("btn-print-all-receipts").addEventListener("click", () =
     const blocks = [];
 
     state.families.forEach(family => {
-        const familyMembers = state.members.filter(m => m.parent === family.headName);
+        const normHead = normalizeArabicName(family.headName);
+        const familyMembers = state.members.filter(m => normalizeArabicName(m.parent) === normHead);
         const amountForMonth = familyMembers.reduce((sum, m) => sum + (m.payments[monthKey] || 0), 0);
         if (amountForMonth <= 0) return; // Nothing paid this month — skip.
 
