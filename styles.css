@@ -2,17 +2,18 @@
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap');
 
 :root {
-    --primary: #10b981; /* Premium Emerald */
-    --primary-hover: #059669;
-    --primary-light: #ecfdf5;
-    --secondary: #0f766e; /* Deep Teal */
-    --accent: #3b82f6; /* Subtle Blue for receipts/info */
+    --primary: #1d4ed8; /* Royal Blue */
+    --primary-hover: #1e40af;
+    --primary-light: #eff6ff;
+    --secondary: #1e3a8a; /* Deep Navy */
+    --accent: #3b82f6; /* Blue — used by .accent-blue stat cards */
+    --gold: #ca8a04; /* Muted gold — used sparingly for luxury/institutional touches */
     --background: #f8fafc;
     --card-bg: #ffffff;
     --text-main: #0f172a;
     --text-muted: #64748b;
     --border: #e2e8f0;
-    --success: #10b981;
+    --success: #10b981; /* Kept green — universal "positive balance" signal, independent of brand color */
     --danger: #ef4444;
     --warning: #f59e0b;
     --sidebar-width: 280px;
@@ -47,7 +48,7 @@ body {
 /* Sidebar Styling */
 aside {
     width: var(--sidebar-width);
-    background-color: #064e3b; /* Extremely dark green-emerald for premium app branding */
+    background-color: #0b1c4a; /* Deep royal-blue for premium app branding */
     color: #fff;
     padding: 24px;
     display: flex;
@@ -109,7 +110,7 @@ aside .brand h2 {
     font-weight: bold;
     font-size: 1.2rem;
     color: white;
-    box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+    box-shadow: 0 0 10px rgba(29, 78, 216, 0.4);
 }
 
 .profile-card .info {
@@ -373,7 +374,7 @@ main {
 .search-input:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+    box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.1);
 }
 
 .search-wrapper svg {
@@ -597,7 +598,7 @@ tr:hover td {
 
 .btn-primary:hover {
     background-color: var(--primary-hover);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+    box-shadow: 0 4px 12px rgba(29, 78, 216, 0.2);
 }
 
 .btn-secondary {
@@ -665,7 +666,7 @@ tr:hover td {
     width: 100vw;
     height: 100vh;
     background-color: #0b1329;
-    background-image: radial-gradient(circle at 10% 20%, rgba(16, 185, 129, 0.15) 0%, transparent 40%), radial-gradient(circle at 90% 80%, rgba(15, 118, 110, 0.2) 0%, transparent 50%);
+    background-image: radial-gradient(circle at 10% 20%, rgba(29, 78, 216, 0.2) 0%, transparent 40%), radial-gradient(circle at 90% 80%, rgba(202, 138, 4, 0.12) 0%, transparent 50%);
     z-index: 100;
     display: flex;
     align-items: center;
@@ -683,7 +684,7 @@ tr:hover td {
     display: flex;
     flex-direction: column;
     gap: 24px;
-    border: 1px solid rgba(16, 185, 129, 0.2);
+    border: 1px solid rgba(202, 138, 4, 0.3);
 }
 
 .login-header {
@@ -695,15 +696,15 @@ tr:hover td {
 }
 
 .login-logo {
-    width: 100px;
-    height: 100px;
+    width: 150px;
+    height: 150px;
     object-fit: contain;
     border-radius: 50%;
-    border: 3px solid var(--primary);
+    border: 4px solid var(--gold);
     background-color: #fff;
-    padding: 3px;
+    padding: 6px;
     margin-bottom: 8px;
-    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.15);
+    box-shadow: 0 8px 24px rgba(29, 78, 216, 0.3);
 }
 
 .login-header h2 {
@@ -741,7 +742,7 @@ tr:hover td {
 .form-control:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+    box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.1);
 }
 
 /* Receipt Generator Styles */
@@ -884,7 +885,7 @@ tr:hover td {
 .spinner {
     width: 40px;
     height: 40px;
-    border: 4px solid rgba(16, 185, 129, 0.2);
+    border: 4px solid rgba(29, 78, 216, 0.2);
     border-top-color: var(--primary);
     border-radius: 50%;
     animation: spin 1s infinite linear;
@@ -976,7 +977,7 @@ tr:hover td {
 
 .ledger-checkbox:hover {
     border-color: var(--primary);
-    box-shadow: 0 0 5px rgba(16, 185, 129, 0.3);
+    box-shadow: 0 0 5px rgba(29, 78, 216, 0.3);
 }
 
 .ledger-checkbox:checked {

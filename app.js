@@ -447,7 +447,7 @@ function showPasswordChangeDialog(userObj, onSuccess) {
                     direction: rtl; text-align: right;">
             <div style="text-align: center; margin-bottom: 24px;">
                 <div style="font-size: 2.5rem; margin-bottom: 8px;">🔐</div>
-                <h2 style="color: #0f766e; font-size: 1.3rem; margin: 0;">تغيير كلمة المرور الإلزامي</h2>
+                <h2 style="color: #1e3a8a; font-size: 1.3rem; margin: 0;">تغيير كلمة المرور الإلزامي</h2>
                 <p style="color: #64748b; font-size: 0.85rem; margin-top: 8px;">
                     مرحباً <strong>${userObj.name}</strong>!<br>
                     لدواعي الأمان، يجب تغيير كلمة المرور الافتراضية قبل الدخول.
@@ -468,7 +468,7 @@ function showPasswordChangeDialog(userObj, onSuccess) {
                 </div>
                 <div id="pwd-change-error" style="color: #ef4444; font-size: 0.85rem; font-weight: bold; display: none; text-align: center;"></div>
                 <button id="btn-confirm-pwd" style="
-                    background-color: #10b981; color: white; border: none; padding: 14px;
+                    background-color: #1d4ed8; color: white; border: none; padding: 14px;
                     border-radius: 8px; font-family: inherit; font-size: 1rem; font-weight: 700;
                     cursor: pointer; margin-top: 4px;
                 ">حفظ كلمة المرور والدخول للنظام</button>
@@ -945,15 +945,15 @@ function renderCharts() {
                 {
                     label: 'المبلغ المحصل الفعلي (شيكل)',
                     data: dataCollected,
-                    backgroundColor: 'rgba(16, 185, 129, 0.85)',
-                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(29, 78, 216, 0.85)',
+                    borderColor: '#1d4ed8',
                     borderWidth: 1
                 },
                 {
                     label: 'المبلغ المستهدف (10 شيكل/عضو)',
                     data: dataExpected,
                     type: 'line',
-                    borderColor: '#0f766e',
+                    borderColor: '#1e3a8a',
                     backgroundColor: 'transparent',
                     borderWidth: 2,
                     borderDash: [5, 5]
@@ -2814,7 +2814,7 @@ function initSignaturePad() {
     sigCtx = sigCanvas.getContext("2d");
     
     // Draw styles
-    sigCtx.strokeStyle = "#0f766e"; // Teal ink
+    sigCtx.strokeStyle = "#1e3a8a"; // Navy ink
     sigCtx.lineWidth = 3;
     sigCtx.lineCap = "round";
     sigCtx.lineJoin = "round";
